@@ -1,0 +1,80 @@
+import Foundation
+import AgentMeterCore
+
+@main
+struct StoreAcceptance {
+    @MainActor static func main() {
+        var checks = 0
+        func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+            guard condition() else { fatalError(message) }
+            checks += 1
+        }
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let window = LimitWindow(id: "primary", title: "每周", usedPercent: 75, resetsAt: now.addingTimeInterval(3600))
+        let store = MeterStore(previewSnapshots: [.init(provider: .codex, windows: [window])])
+        store.preferences.language = .simplifiedChinese
+        defer { L10n.language = .system }
+        expect(store.providers == ProviderID.allCases, "Existing providers remain visible by default")
+        expect(store.quotaPercent(window) == 25, "Default mode shows remaining")
+        store.preferences.quotaDisplay = .used
+        expect(store.quotaPercent(window) == 75, "The same raw sample can show used quota")
+        expect(store.menuLabel.contains("75%"), "Menu summary follows the selected quota mode")
+        store.setProvider(.codex, enabled: false)
+        expect(!store.providers.contains(.codex) && store.selected == .claude, "Hiding the selected provider chooses a visible provider")
+        expect(store.snapshot(.codex).windows.count == 1, "Hiding does not destroy cached quota")
+        expect(store.pins.contains("codex:primary") && store.menuLabel.isEmpty, "Hidden pins are retained but not displayed")
+        store.setProvider(.claude, enabled: false)
+        expect(store.providers == [.grokBot] && store.selected == .grokBot, "Selection continues to follow visibility")
+        store.setProvider(.grokBot, enabled: false)
+        expect(store.providers == [.grokBot] && store.providerMessage != nil, "The last provider cannot be disabled")
+        store.setProvider(.codex, enabled: true)
+        expect(store.providers == [.codex, .grokBot] && store.menuLabel.contains("75%"), "Re-enabling restores the existing pin and raw sample")
+        expect(MeterFormat.reset(nil, style: .absolute, now: now) == "重置时间暂不可用", "Unknown reset remains unknown")
+        expect(MeterFormat.reset(now, style: .absolute, now: now) == "窗口已到期，等待数据更新", "Absolute style does not claim expired quota reset")
+        expect(MeterFormat.reset(now.addingTimeInterval(3600), style: .countdown, now: now) == "1小时0分钟后", "Countdown has deterministic time input")
+        let absolute = MeterFormat.reset(window.resetsAt, style: .absolute, now: now)
+        expect(absolute.contains("月") && absolute.contains(":"), "Absolute reset displays a local calendar date and clock time")
+        expect(!store.systemServices.notificationsAllowed && !store.systemServices.loginEnabled, "Preview tests never query or enable system services")
+        let demo = MeterStore(demo: true)
+        demo.setProvider(.codex, enabled: false)
+        demo.setProvider(.claude, enabled: false)
+        expect(demo.providers == [.claude], "Demo mode must also retain one actually visible provider")
+        let originalZone = NSTimeZone.default
+        let utcHour = Calendar(identifier: .gregorian).dateComponents(in: TimeZone(secondsFromGMT: 0)!, from: Date()).hour!
+        NSTimeZone.default = TimeZone(secondsFromGMT: utcHour < 12 ? -12 * 3600 : 14 * 3600)!
+        store.selected = .codex
+        let localDay = MeterDate.day()
+        expect(store.todayKey == localDay, "Codex local logs must select today using the local calendar, including across UTC midnight")
+        expect(store.lastSevenDays.last == localDay, "Codex local history must end on the same local day as the today card")
+        NSTimeZone.default = originalZone
+        var local = ProviderSnapshot(provider: .codex, days: [.init(day: MeterDate.day(), totalTokens: 123, tokens: .init(input: 100, output: 23))], sourceNote: "local")
+        local.historySource = .codexLocal
+        local.historyUpdatedAt = Date()
+        let quotaBeforeLocal = store.snapshot(.codex)
+        store.updateCodexLocalUsage(local)
+        expect(store.today?.totalTokens == 123, "A local log tick must update today's card immediately")
+        expect(store.snapshot(.codex).windows == quotaBeforeLocal.windows && store.snapshot(.codex).updatedAt == quotaBeforeLocal.updatedAt, "A local tick must preserve independent quota values and sample time")
+        store.updateCodexLocalUsage(local)
+        expect(store.today?.totalTokens == 123, "Repeated local ticks must replace totals, not add them")
+        local.historyIncomplete = true
+        local.days = [.init(day: MeterDate.day(), totalTokens: 200, tokens: .init(input: 150, output: 50))]
+        local.historyUpdatedAt = Date()
+        store.updateCodexLocalUsage(local)
+        expect(store.today?.totalTokens == 200 && store.snapshot(.codex).historyIncomplete == true, "Valid partial logs must keep updating with an explicit incomplete flag")
+        local.historyReadFailed = true
+        local.days = []
+        store.updateCodexLocalUsage(local)
+        expect(store.today?.totalTokens == 200, "An empty log read failure must preserve the last usable local totals")
+        var missingQuota = store.snapshot(.codex)
+        missingQuota.windows = []
+        missingQuota.quotaMessage = "当前账户未提供额度窗口"
+        missingQuota.message = missingQuota.quotaMessage
+        store.snapshots = [missingQuota]
+        local.historyReadFailed = false
+        local.historyIncomplete = false
+        local.days = [.init(day: MeterDate.day(), totalTokens: 210)]
+        store.updateCodexLocalUsage(local)
+        expect(store.snapshot(.codex).message == missingQuota.quotaMessage, "Local ticks must retain successful-but-unavailable quota explanations")
+        print("Store: \(checks) acceptance checks passed without preferences, network or system writes")
+    }
+}
