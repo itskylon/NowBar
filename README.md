@@ -14,8 +14,6 @@ NowBar 把 Codex、Claude Code 和 Grok Bot 的额度状态放进 Mac 菜单栏�
 
 同时使用多个 AI 编程工具时，查看额度通常需要反复打开各家的设置页；本机 Token、模型用量和项目开销又分散在不同日志里。NowBar 希望把这些信息集中起来，让查看用量成为一个随手就能完成的动作。
 
-项目受到 [Nowdex](https://nowdex.app/zh-hans/) 与 [CodexBar](https://github.com/steipete/CodexBar) 的启发，采用 SwiftUI 与 AppKit 开发原生 macOS 应用。名字由 **Now + Bar** 组成：在菜单栏里看到此刻的用量状态。它是独立的个人项目，与相关 AI 服务提供商没有官方关联。
-
 ## 功能介绍
 
 - **菜单栏额度**：固定最多两项额度，查看已用、剩余百分比与重置时间；支持手动刷新和自动刷新。
