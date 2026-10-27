@@ -33,7 +33,7 @@ NowBar 把 Codex、Claude Code 和 Grok Bot 的额度状态放进 Mac 菜单栏�
 | Claude Code | 支持，需接入 Claude Code 状态栏 | 支持，读取本机会话日志 | 支持 |
 | Grok Bot | 支持，复用本机桌面应用的活动登录 | 暂不支持 | 暂不支持 |
 
-Meta Muse 目前尚未接入。Grok Bot 的适配依赖官方桌面客户端所用接口，接口变化可能影响读取。
+Grok Bot 的适配依赖官方桌面客户端所用接口，接口变化可能影响读取。
 
 **账户额度与本机日志是两种数据来源。** 本机用量只覆盖这台 Mac 已保存的日志，不代表其他设备或整个订阅账户；参考费用根据支持模型的 API 单价估算，不是订阅账单或实际扣费。未知模型与不支持的计价条件会标记为未计价。
 
@@ -100,11 +100,3 @@ resources/               应用配置、图标、本地化与 Claude 桥接脚�
 scripts/                 构建、图标生成与测试入口
 docs/BRANDING.md         品牌与图标说明
 ```
-
-## 致谢与资源来源
-
-- [Nowdex](https://nowdex.app/zh-hans/)：界面布局参考；`resources/providers/` 的 [Codex](https://nowdex.app/providers/codex.svg)、[Claude](https://nowdex.app/providers/claude.svg)、[Grok](https://nowdex.app/providers/grok.svg) 服务标识以及 `resources/interface/` 图标来自其网站。
-- [CodexBar](https://github.com/steipete/CodexBar)：菜单栏额度工具与设置体验参考。
-- [Claude Code 状态栏文档](https://code.claude.com/docs/en/statusline)：Claude 额度桥接方式。
-
-NowBar 自身图标与品牌说明见 [品牌文档](docs/BRANDING.md)。相关服务名称与标识归各自权利人所有。
