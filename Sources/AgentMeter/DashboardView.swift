@@ -74,6 +74,7 @@ struct DashboardView: View {
     var onSizeChange: (CGSize) -> Void = { _ in }
     var settings: () -> Void = {}
     var usage: () -> Void = {}
+    var about: () -> Void = {}
     @State private var contentHeight: CGFloat = 680
     @State private var showUsage = true
     @State private var showTrend = true
@@ -92,12 +93,13 @@ struct DashboardView: View {
                     quotaCard
                     usageCard
                     trendCard
+                    PanelActions(store: store, updates: store.updates, settings: settings, usage: usage, about: about)
                 }.padding(.horizontal, 12).padding(.bottom, 12)
                     .fixedSize(horizontal: false, vertical: true)
                     .onGeometryChange(for: CGFloat.self) { ceil($0.size.height) } action: { value in
                         if value > 0, abs(contentHeight - value) > 0.5 { contentHeight = value }
                     }
-            }.scrollIndicators(.hidden)
+            }.scrollIndicators(.automatic)
         }
         .frame(width: ReferenceStyle.width, height: panelHeight)
         .foregroundStyle(ReferenceStyle.text)
@@ -448,6 +450,83 @@ struct DashboardView: View {
         let operation = NSPrintOperation(view: view)
         operation.showsPrintPanel = true
         operation.run()
+    }
+}
+
+private struct PanelActions: View {
+    @ObservedObject var store: MeterStore
+    @ObservedObject var updates: AppUpdateController
+    let settings: () -> Void
+    let usage: () -> Void
+    let about: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            action("用量与支出", symbol: "chart.bar.xaxis", perform: usage)
+            Menu {
+                ForEach(MeterShortcutMenu.statusPages, id: \.name) { page in
+                    Button(page.name) {
+                        if let url = URL(string: page.address) { NSWorkspace.shared.open(url) }
+                    }
+                }
+            } label: {
+                PanelActionLabel(title: L10n.text("状态页"), symbol: "network", trailing: nil, submenu: true)
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            separator
+            action("刷新", symbol: "arrow.clockwise", trailing: "⌘R") { store.refresh() }
+                .disabled(store.refreshing)
+            action("设置…", symbol: "gearshape", trailing: "⌘,", perform: settings)
+            action(updates.checking ? "正在检查更新…" : "检查更新…", symbol: "arrow.down.circle") { updates.checkManually() }
+                .disabled(updates.checking || !updates.enabled)
+            action("关于 NowBar", symbol: "info.circle", trailing: "v\(updates.currentVersion)", perform: about)
+            separator
+            action("退出 NowBar", symbol: "power", trailing: "⌘Q") { NSApp.terminate(nil) }
+        }
+        .padding(6)
+        .referenceCard()
+    }
+
+    private var separator: some View {
+        Rectangle().fill(ReferenceStyle.divider).frame(height: 0.5).padding(.horizontal, 8).padding(.vertical, 4)
+    }
+
+    private func action(_ title: String, symbol: String, trailing: String? = nil, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            PanelActionLabel(title: L10n.text(title), symbol: symbol, trailing: trailing)
+        }
+    }
+}
+
+private struct PanelActionLabel: View {
+    @Environment(\.isEnabled) private var enabled
+    let title: String
+    let symbol: String
+    let trailing: String?
+    var submenu = false
+    @State private var hovered = false
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: symbol).font(.system(size: 12)).frame(width: 16)
+                .foregroundStyle(ReferenceStyle.secondary)
+            Text(title).font(.system(size: 12))
+            Spacer(minLength: 8)
+            if let trailing {
+                Text(trailing).font(.system(size: 11)).foregroundStyle(ReferenceStyle.caption)
+            }
+            if submenu {
+                Image(systemName: "chevron.right").font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(ReferenceStyle.caption)
+            }
+        }
+        .padding(.horizontal, 8).frame(height: 30).frame(maxWidth: .infinity)
+        .foregroundStyle(ReferenceStyle.text)
+        .background(hovered && enabled ? ReferenceStyle.control : .clear, in: RoundedRectangle(cornerRadius: 5))
+        .opacity(enabled ? 1 : 0.45)
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
     }
 }
 

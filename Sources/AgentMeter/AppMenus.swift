@@ -3,6 +3,11 @@ import AgentMeterCore
 
 @MainActor
 final class MeterShortcutMenu: NSObject {
+    static let statusPages = [
+        (name: "Codex", address: "https://status.openai.com/"),
+        (name: "Claude", address: "https://status.claude.com/"),
+        (name: "Grok", address: "https://status.x.ai/")
+    ]
     private let refresh: () -> Void
     private let settings: () -> Void
     private let usage: () -> Void
@@ -37,7 +42,7 @@ final class MeterShortcutMenu: NSObject {
         let status = add("状态页", nil)
         let submenu = NSMenu()
         submenu.autoenablesItems = false
-        for (name, address) in [("Codex", "https://status.openai.com/"), ("Claude", "https://status.claude.com/"), ("Grok", "https://status.x.ai/")] {
+        for (name, address) in Self.statusPages {
             let item = NSMenuItem(title: name, action: #selector(showStatus(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = URL(string: address)!

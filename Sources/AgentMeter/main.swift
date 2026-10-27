@@ -54,11 +54,12 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         panel.hasShadow = true
         panel.isFloatingPanel = true
         panel.level = .popUpMenu
-        panel.hidesOnDeactivate = false
+        panel.hidesOnDeactivate = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         let hosting = NSHostingView(rootView: DashboardView(store: store, maxHeight: panelHeightLimit, onSizeChange: { [weak self] size in
             DispatchQueue.main.async { self?.resizePanel(size) }
-        }, settings: { [weak self] in self?.openSettings() }, usage: { [weak self] in self?.openUsage() }))
+        }, settings: { [weak self] in self?.openSettings() }, usage: { [weak self] in self?.openUsage() },
+           about: { [weak self] in self?.showAbout() }))
         panel.contentView = hosting
         changes = store.objectWillChange.sink { [weak self] in
             DispatchQueue.main.async { self?.updateStatusLabel() }
@@ -176,7 +177,7 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         let alert = NSAlert()
         alert.icon = AppBrand.icon
         alert.messageText = L10n.text("关于 NowBar")
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "13"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "14"
         alert.informativeText = L10n.format("版本 %@（%@）", store.updates.currentVersion, build) + "\n\n" + L10n.text("AI 用量，抬眼可见。")
         alert.addButton(withTitle: L10n.text("好"))
         alert.addButton(withTitle: L10n.text("检查更新…"))
@@ -221,7 +222,6 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     }
 
     private func installDismissalObservers() {
-        guard !inspectionMode else { return }
         globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in self?.panel.orderOut(nil) }
         }
