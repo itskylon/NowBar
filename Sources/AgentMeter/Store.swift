@@ -28,6 +28,7 @@ final class MeterStore: ObservableObject {
         }
     }
     let systemServices: MeterSystemServices
+    let updates: AppUpdateController
     let demo: Bool
     private let preview: Bool
     private var timer: Timer?
@@ -43,6 +44,7 @@ final class MeterStore: ObservableObject {
         self.demo = demo
         preview = previewSnapshots != nil
         systemServices = MeterSystemServices(active: !demo && previewSnapshots == nil)
+        updates = AppUpdateController(enabled: !demo && previewSnapshots == nil)
         L10n.language = preferences.language
         if let previewSnapshots { snapshots = previewSnapshots; return }
         if demo { snapshots = Self.demoSnapshots(); selected = .claude; return }

@@ -13,7 +13,7 @@ struct MeterSettingsView: View {
                         Text(L10n.text("AI 用量，抬眼可见。")).font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.6.3")
+                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.6.4")
                         .font(.system(size: 11)).foregroundStyle(.tertiary)
                 }
                 Picker(L10n.text("设置分类"), selection: $tab) {
@@ -90,6 +90,8 @@ private struct MeterGeneralSettings: View {
                 caption("默认跟随系统，也可单独选择中文或英文；切换后立即生效。")
             }
             Divider()
+            MeterUpdateSettings(updates: store.updates)
+            Divider()
             VStack(alignment: .leading, spacing: 12) {
                 Text(L10n.text("显示与刷新")).font(.headline)
                 Picker(L10n.text("自动刷新"), selection: $store.preferences.refreshInterval) {
@@ -139,5 +141,47 @@ private struct MeterGeneralSettings: View {
 
     private func caption(_ text: String) -> some View {
         Text(L10n.text(text)).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct MeterUpdateSettings: View {
+    @ObservedObject var updates: AppUpdateController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L10n.text("软件更新")).font(.headline)
+            HStack(spacing: 10) {
+                Text(L10n.format("当前版本 %@", updates.currentVersion)).foregroundStyle(.secondary)
+                Spacer()
+                if updates.checking { ProgressView().controlSize(.small) }
+                Button(L10n.text(updates.checking ? "正在检查更新…" : "检查更新…")) {
+                    updates.checkManually()
+                }
+                .disabled(updates.checking || !updates.enabled)
+                .accessibilityIdentifier("NowBarCheckForUpdates")
+            }
+            if let result = updates.result {
+                switch result {
+                case .available(let release):
+                    caption(L10n.format("新版本 %@ 可供下载。", release.version))
+                case .upToDate:
+                    caption(L10n.text("当前已是最新版本"))
+                case .failed(let message):
+                    caption(L10n.text(message))
+                }
+            }
+            if let checked = updates.lastChecked {
+                HStack(spacing: 4) {
+                    Text(L10n.text("上次检查"))
+                    Text(checked, format: .dateTime.year().month().day().hour().minute())
+                }.font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            caption(L10n.text("启动时和运行期间每天自动检查更新，有新版本时弹窗提醒。"))
+            caption(L10n.text("下载后退出 NowBar，并用新版应用替换原应用。"))
+        }
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 }

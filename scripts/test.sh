@@ -11,12 +11,18 @@ done
 swiftc "${METER_FLAGS[@]}" -parse-as-library -emit-library -static -emit-module -module-name AgentMeterCore \
   Sources/AgentMeterCore/*.swift -emit-module-path "$METER_BUILD/AgentMeterCore.swiftmodule" -o "$METER_BUILD/libAgentMeterCore.a"
 swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
-  Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Tests/StoreAcceptance.swift -o "$METER_BUILD/StoreAcceptance"
+  Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Sources/AgentMeter/AppUpdateController.swift Tests/StoreAcceptance.swift -o "$METER_BUILD/StoreAcceptance"
 "$METER_BUILD/StoreAcceptance"
 swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
   Sources/AgentMeter/UsageHistoryStore.swift Tests/HistoryWindowAcceptance.swift -o "$METER_BUILD/HistoryWindowAcceptance"
 "$METER_BUILD/HistoryWindowAcceptance"
 swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
-  Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Sources/AgentMeter/UsageHistoryStore.swift \
+  Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Sources/AgentMeter/AppUpdateController.swift Sources/AgentMeter/UsageHistoryStore.swift \
   Tests/LanguageAcceptance.swift -o "$METER_BUILD/LanguageAcceptance"
 "$METER_BUILD/LanguageAcceptance"
+swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
+  Sources/AgentMeter/AppUpdateController.swift Tests/UpdateControllerAcceptance.swift -o "$METER_BUILD/UpdateControllerAcceptance"
+"$METER_BUILD/UpdateControllerAcceptance"
+swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
+  Sources/AgentMeter/AppUpdateController.swift Sources/AgentMeter/AppMenus.swift Tests/ShortcutMenuAcceptance.swift -o "$METER_BUILD/ShortcutMenuAcceptance"
+"$METER_BUILD/ShortcutMenuAcceptance"

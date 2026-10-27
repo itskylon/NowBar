@@ -16,6 +16,17 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     private let panel = MeterPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 600), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     private var usageWindow: NSWindow?
     private var changes: AnyCancellable?
+    private var updateChanges: AnyCancellable?
+    private var wakeObserver: NSObjectProtocol?
+    private var showingUpdateAlert = false
+    private lazy var shortcuts = MeterShortcutMenu(
+        refresh: { [weak self] in self?.store.refresh() },
+        settings: { [weak self] in self?.openSettings() },
+        usage: { [weak self] in self?.openUsage() },
+        about: { [weak self] in self?.showAbout() },
+        checkUpdates: { [weak self] in self?.store.updates.checkManually() },
+        quit: { NSApp.terminate(nil) },
+        openURL: { NSWorkspace.shared.open($0) })
     private var localMouseMonitor: Any?
     private var globalMouseMonitor: Any?
     private var resignObserver: NSObjectProtocol?
@@ -31,7 +42,8 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             button.title = ""
             button.image = nil
             button.target = self
-            button.action = #selector(togglePanel)
+            button.action = #selector(statusButtonClicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.toolTip = AppBrand.name + " · " + L10n.text("AI 用量")
             button.addSubview(summary)
         }
@@ -51,6 +63,15 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         changes = store.objectWillChange.sink { [weak self] in
             DispatchQueue.main.async { self?.updateStatusLabel() }
         }
+        updateChanges = store.updates.objectWillChange.sink { [weak self] in
+            DispatchQueue.main.async { self?.updateApplicationMenu() }
+        }
+        store.updates.onPresentation = { [weak self] result in
+            DispatchQueue.main.async { self?.presentUpdate(result) }
+        }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.store.updates.checkAutomaticallyIfDue() }
+        }
         updateStatusLabel()
         installDismissalObservers()
         openPanelObserver = NotificationCenter.default.addObserver(forName: Notification.Name("AgentMeterOpenPanel"), object: nil, queue: .main) { [weak self] _ in
@@ -69,9 +90,12 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         } else if inspectionMode || CommandLine.arguments.contains("--open") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.togglePanel() }
         }
+        store.updates.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        store?.updates.stop()
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
         if let localMouseMonitor { NSEvent.removeMonitor(localMouseMonitor) }
         if let globalMouseMonitor { NSEvent.removeMonitor(globalMouseMonitor) }
         if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
@@ -79,7 +103,10 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         if let openPanelObserver { NotificationCenter.default.removeObserver(openPanelObserver) }
     }
 
-    func applicationDidBecomeActive(_ notification: Notification) { store?.systemServices.refreshStatus() }
+    func applicationDidBecomeActive(_ notification: Notification) {
+        store?.systemServices.refreshStatus()
+        store?.updates.checkAutomaticallyIfDue()
+    }
 
     private func providerImage(_ provider: ProviderID) -> NSImage? {
         let image = Bundle.main.url(forResource: provider.iconName, withExtension: "svg", subdirectory: "providers")
@@ -106,6 +133,59 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         let accessibleSummary = (rows.map { $0.title + " " + $0.value }).joined(separator: "; ")
         statusItem.button?.setAccessibilityLabel(AppBrand.name + (accessibleSummary.isEmpty ? "" : ": " + accessibleSummary))
         statusItem.button?.setAccessibilityIdentifier("AgentMeterStatusItem")
+        updateApplicationMenu()
+    }
+
+    private func updateApplicationMenu() {
+        let menu = NSMenu()
+        let appItem = NSMenuItem(title: AppBrand.name, action: nil, keyEquivalent: "")
+        appItem.submenu = shortcuts.build(version: store.updates.currentVersion, checking: store.updates.checking, refreshing: store.refreshing)
+        menu.addItem(appItem)
+        NSApp.mainMenu = menu
+    }
+
+    @objc private func statusButtonClicked() {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            guard let button = statusItem.button else { return }
+            panel.orderOut(nil)
+            let menu = shortcuts.build(version: store.updates.currentVersion, checking: store.updates.checking, refreshing: store.refreshing)
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY - 3), in: button)
+        } else {
+            togglePanel()
+        }
+    }
+
+    private func presentUpdate(_ result: AppUpdatePresentation) {
+        guard !showingUpdateAlert else { return }
+        showingUpdateAlert = true
+        defer { showingUpdateAlert = false }
+        panel.orderOut(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        let response = MeterUpdateAlerts.make(result, currentVersion: store.updates.currentVersion).runModal()
+        if case .available(let release) = result, response == .alertFirstButtonReturn {
+            if !NSWorkspace.shared.open(release.url) {
+                _ = MeterUpdateAlerts.make(.failed("下载页面未能打开，请稍后重试。"), currentVersion: store.updates.currentVersion).runModal()
+            }
+        }
+    }
+
+    private func showAbout() {
+        panel.orderOut(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.icon = AppBrand.icon
+        alert.messageText = L10n.text("关于 NowBar")
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "13"
+        alert.informativeText = L10n.format("版本 %@（%@）", store.updates.currentVersion, build) + "\n\n" + L10n.text("AI 用量，抬眼可见。")
+        alert.addButton(withTitle: L10n.text("好"))
+        alert.addButton(withTitle: L10n.text("检查更新…"))
+        alert.addButton(withTitle: L10n.text("项目主页"))
+        switch alert.runModal() {
+        case .alertSecondButtonReturn: store.updates.checkManually()
+        case .alertThirdButtonReturn: NSWorkspace.shared.open(URL(string: "https://github.com/itskylon/NowBar")!)
+        default: break
+        }
     }
 
     private var visibleScreen: NSRect {
