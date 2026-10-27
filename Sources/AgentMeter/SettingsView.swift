@@ -13,7 +13,7 @@ struct MeterSettingsView: View {
                         Text(L10n.text("AI 用量，抬眼可见。")).font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.6.5")
+                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.6.6")
                         .font(.system(size: 11)).foregroundStyle(.tertiary)
                 }
                 Picker(L10n.text("设置分类"), selection: $tab) {

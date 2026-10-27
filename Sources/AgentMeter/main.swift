@@ -177,7 +177,7 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         let alert = NSAlert()
         alert.icon = AppBrand.icon
         alert.messageText = L10n.text("关于 NowBar")
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "14"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "15"
         alert.informativeText = L10n.format("版本 %@（%@）", store.updates.currentVersion, build) + "\n\n" + L10n.text("AI 用量，抬眼可见。")
         alert.addButton(withTitle: L10n.text("好"))
         alert.addButton(withTitle: L10n.text("检查更新…"))

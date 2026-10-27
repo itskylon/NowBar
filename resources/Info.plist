@@ -6,8 +6,8 @@
 <key>CFBundleName</key><string>NowBar</string>
 <key>CFBundleDisplayName</key><string>NowBar</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>0.6.5</string>
-<key>CFBundleVersion</key><string>14</string>
+<key>CFBundleShortVersionString</key><string>0.6.6</string>
+<key>CFBundleVersion</key><string>15</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
 <key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
