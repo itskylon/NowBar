@@ -37,6 +37,12 @@ Meta Muse 目前尚未接入。Grok Bot 的适配依赖官方桌面客户端所�
 
 **账户额度与本机日志是两种数据来源。** 本机用量只覆盖这台 Mac 已保存的日志，不代表其他设备或整个订阅账户；参考费用根据支持模型的 API 单价估算，不是订阅账单或实际扣费。未知模型与不支持的计价条件会标记为未计价。
 
+## 下载安装
+
+在 [GitHub Releases](https://github.com/itskylon/NowBar/releases/latest) 下载打包好的应用，解压后将 `NowBar.app` 拖入「应用程序」。
+
+当前安装包适用于 **Apple Silicon（M 系列芯片）与 macOS 14 及以上**。使用本机临时签名，尚未经过 Apple 公证；首次打开如被系统拦截，可按提示在「系统设置 → 隐私与安全性」中允许打开。
+
 ## 构建与运行
 
 需要 macOS 14 或更新版本、Xcode Command Line Tools（Swift）以及 Python 3。应用本身没有第三方 Swift 库依赖；构建脚本使用 macOS 自带的图标工具。
