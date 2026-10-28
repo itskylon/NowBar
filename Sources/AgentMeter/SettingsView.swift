@@ -9,7 +9,7 @@ struct MeterSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 WorkspacePageHeader(title: L10n.text("通用与服务设置"), subtitle: L10n.text("AI 用量，抬眼可见。")) {
-                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.6.8")
+                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.6.9")
                         .font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(.secondary)
                         .padding(.horizontal, 9).padding(.vertical, 5)
                         .background(Color.primary.opacity(0.045), in: Capsule())

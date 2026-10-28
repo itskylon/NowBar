@@ -35,3 +35,4 @@ swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD"
 swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
   Sources/AgentMeter/AppThemeController.swift Tests/AppearanceAcceptance.swift -o "$METER_BUILD/AppearanceAcceptance"
 "$METER_BUILD/AppearanceAcceptance"
+bash scripts/test-panel.sh

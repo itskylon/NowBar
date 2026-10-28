@@ -31,6 +31,11 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     private var localMouseMonitor: Any?
     private var globalMouseMonitor: Any?
     private var resignObserver: NSObjectProtocol?
+    private var panelPresentation = 0
+    private var statusClick: (down: TimeInterval, up: TimeInterval?, anchor: NSRect, point: NSPoint, handled: Bool, mouseDownCount: UInt32)?
+    private var lastStatusAction: TimeInterval = -1
+    private var handledStatusClickThrough: TimeInterval = -1
+    private var panelAnchor: NSRect?
     private var screenObserver: NSObjectProtocol?
     private var openPanelObserver: NSObjectProtocol?
     private let inspectionMode = CommandLine.arguments.contains("--show")
@@ -56,7 +61,8 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         panel.hasShadow = true
         panel.isFloatingPanel = true
         panel.level = .popUpMenu
-        panel.hidesOnDeactivate = true
+        // This nonactivating panel owns its focus independently of app activation.
+        panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         let hosting = NSHostingView(rootView: DashboardView(store: store, maxHeight: panelHeightLimit, onSizeChange: { [weak self] size in
             DispatchQueue.main.async { self?.resizePanel(size) }
@@ -151,10 +157,35 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             let menu = shortcuts.build(version: store.updates.currentVersion, checking: store.updates.checking, refreshing: store.refreshing)
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY - 3), in: button)
         } else {
+            guard acceptStatusAction(event) else { return }
+            panelAnchor = nil
             if let event, let entry = summary.entry(at: summary.convert(event.locationInWindow, from: nil)),
                let provider = ProviderID(rawValue: entry.id) { store.selected = provider }
             togglePanel()
         }
+    }
+
+    private func acceptStatusAction(_ event: NSEvent?, mouseDownCount: UInt32 = CGEventSource.counterForEventType(.combinedSessionState, eventType: .leftMouseDown)) -> Bool {
+        guard let event, event.type == .leftMouseUp else {
+            // Accessibility and keyboard actions are independent of a mouse gesture.
+            statusClick = nil
+            return true
+        }
+        lastStatusAction = max(lastStatusAction, event.timestamp)
+        guard event.timestamp > handledStatusClickThrough else { return false }
+        guard var click = statusClick, event.timestamp >= click.down else { return true }
+        // MenuBarAgent timestamps its forwarded action when it sends it, which
+        // may be after physical release and recovery. A newer timestamp alone
+        // does not identify another click; require another physical mouse-down.
+        if let up = click.up, event.timestamp > up, mouseDownCount != click.mouseDownCount {
+            statusClick = nil
+            return true
+        }
+        guard !click.handled else { return false }
+        click.handled = true
+        statusClick = click
+        handledStatusClickThrough = max(handledStatusClickThrough, click.up ?? event.timestamp)
+        return true
     }
 
     private func presentUpdate(_ result: AppUpdatePresentation) {
@@ -177,7 +208,7 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         let alert = NSAlert()
         alert.icon = AppBrand.icon
         alert.messageText = L10n.text("关于 NowBar")
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "17"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "21"
         alert.informativeText = L10n.format("版本 %@（%@）", store.updates.currentVersion, build) + "\n\n" + L10n.text("AI 用量，抬眼可见。")
         alert.addButton(withTitle: L10n.text("好"))
         alert.addButton(withTitle: L10n.text("检查更新…"))
@@ -202,8 +233,8 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
 
     private func positionPanel() {
         guard let button = statusItem.button, let statusWindow = button.window else { return }
-        let anchor = statusWindow.convertToScreen(button.convert(button.bounds, to: nil))
-        let screen = visibleScreen
+        let anchor = panelAnchor ?? statusWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x: anchor.midX, y: anchor.midY)) })?.visibleFrame ?? visibleScreen
         let size = panel.frame.size
         let x = min(max(screen.minX + 8, anchor.midX - size.width / 2), screen.maxX - size.width - 8)
         let top = min(anchor.minY - 6, screen.maxY - 6)
@@ -216,14 +247,26 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     }
 
     private func showPanel() {
+        panelPresentation += 1
         positionPanel()
-        NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
 
     private func installDismissalObservers() {
-        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            Task { @MainActor in self?.panel.orderOut(nil) }
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .leftMouseUp]) { [weak self] event in
+            // AppKit delivers event monitors on the main thread. Dismiss now so
+            // this event cannot close a panel opened by a later status-button click.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let point = event.window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
+                if event.type == .leftMouseDown, self.statusRegion(at: point) != nil,
+                   !StatusItemScreenRegions.menuBarIsVisible(at: point) {
+                    // A full-screen app can cover a display while AX retains its old icon frame.
+                    self.statusClick = nil
+                    return
+                }
+                self.handleGlobalMouseEvent(event)
+            }
         }
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self, self.panel.isVisible else { return event }
@@ -235,9 +278,74 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             }
             return event
         }
-        resignObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.panel.orderOut(nil) }
+        resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { [weak self] notification in
+            MainActor.assumeIsolated {
+                guard let self, let window = notification.object as? NSWindow,
+                      self.panel.containsWindow(window) else { return }
+                let presentation = self.panelPresentation
+                // AppKit resigns the old key window before assigning its replacement.
+                // Let that handoff finish so an attached popover keeps its parent open.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.panelPresentation == presentation,
+                          self.panel.isVisible, !self.panel.containsKeyWindow else { return }
+                    self.panel.orderOut(nil)
+                }
+            }
         }
+    }
+
+    private func statusRegion(at point: NSPoint) -> NSRect? {
+        guard let button = statusItem.button, let window = button.window else { return nil }
+        let bounds = window.convertToScreen(button.convert(button.bounds, to: nil))
+        return StatusItemScreenRegions.rectangles(button: bounds, screens: NSScreen.screens.map(\.frame))
+            .first { $0.contains(point) }
+    }
+
+    private func handleGlobalMouseEvent(_ event: NSEvent, mouseDownCount: UInt32 = CGEventSource.counterForEventType(.combinedSessionState, eventType: .leftMouseDown)) {
+        let point = event.window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
+        if event.type == .leftMouseUp {
+            guard var click = statusClick, event.timestamp >= click.down else { return }
+            guard click.anchor.contains(point), !event.modifierFlags.contains(.control) else {
+                statusClick = nil
+                return
+            }
+            click.up = event.timestamp
+            statusClick = click
+            if click.handled { handledStatusClickThrough = max(handledStatusClickThrough, event.timestamp) }
+            // MenuBarAgent normally sends the native action on mouse-down. During
+            // registration it can omit that action while still forwarding mouse events.
+            // Give a queued native action priority, then handle only the missing gesture.
+            DispatchQueue.main.async { [weak self] in
+                self?.completeStatusClick(down: click.down)
+            }
+            return
+        }
+        statusClick = nil
+        if event.type == .leftMouseDown, !event.modifierFlags.contains(.control),
+           let anchor = statusRegion(at: point) {
+            statusClick = (event.timestamp, nil, anchor, point, lastStatusAction >= event.timestamp, mouseDownCount)
+        }
+        dismissPanelForGlobalMouseDown(event)
+    }
+
+    private func completeStatusClick(down: TimeInterval) {
+        guard var click = statusClick, click.down == down, click.up != nil, !click.handled else { return }
+        click.handled = true
+        statusClick = click
+        handledStatusClickThrough = max(handledStatusClickThrough, click.up ?? down)
+        panelAnchor = click.anchor
+        let point = NSPoint(x: click.point.x - click.anchor.minX - summary.frame.minX, y: summary.bounds.midY)
+        if let entry = summary.entry(at: point), let provider = ProviderID(rawValue: entry.id) {
+            store.selected = provider
+        }
+        togglePanel()
+    }
+
+    private func dismissPanelForGlobalMouseDown(_ event: NSEvent) {
+        let point = event.window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
+        // The same status click may arrive both globally and through the native button.
+        if statusRegion(at: point) != nil { return }
+        panel.orderOut(nil)
     }
 
     private func openSettings() { openWorkspace(showSettings: true) }

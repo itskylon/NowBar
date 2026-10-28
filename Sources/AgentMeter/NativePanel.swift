@@ -6,6 +6,52 @@ final class MeterPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func cancelOperation(_ sender: Any?) { orderOut(sender) }
+
+    func containsWindow(_ window: NSWindow) -> Bool {
+        var candidate: NSWindow? = window
+        while let current = candidate {
+            if current === self { return true }
+            candidate = current.parent
+        }
+        return false
+    }
+
+    var containsKeyWindow: Bool {
+        func hasKeyWindow(_ window: NSWindow) -> Bool {
+            window.isKeyWindow || (window.childWindows ?? []).contains(where: hasKeyWindow)
+        }
+        return hasKeyWindow(self)
+    }
+}
+
+enum StatusItemScreenRegions {
+    /// Window bounds and layers are available without recording screen contents.
+    static func menuBarIsVisible(at point: NSPoint) -> Bool {
+        guard let primary = NSScreen.screens.first,
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
+        let screenPoint = CGPoint(x: point.x, y: primary.frame.maxY - point.y)
+        for window in windows {
+            guard (window[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let bounds = window[kCGWindowBounds as String] as? [String: Any],
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary), rect.contains(screenPoint) else { continue }
+            return (window[kCGWindowLayer as String] as? Int) == Int(CGWindowLevelForKey(.mainMenuWindow))
+        }
+        return false
+    }
+
+    /// AppKit moves the native status window between display mirrors when it
+    /// forwards a click. Preserve the button's distance from the top-right edge.
+    static func rectangles(button: NSRect, screens: [NSRect]) -> [NSRect] {
+        guard !button.isEmpty,
+              let source = screens.first(where: { $0.contains(NSPoint(x: button.midX, y: button.midY)) }) else { return [] }
+        let trailing = source.maxX - button.maxX
+        let top = source.maxY - button.maxY
+        return screens.map { screen in
+            NSRect(x: screen.maxX - trailing - button.width,
+                   y: screen.maxY - top - button.height,
+                   width: button.width, height: button.height).intersection(screen)
+        }.filter { !$0.isEmpty }
+    }
 }
 
 enum MeterStatusPart {
