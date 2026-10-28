@@ -56,10 +56,9 @@ struct UsageHistoryView: View {
         .onChange(of: showingQuota) { _, quota in
             if quota { history.stop() } else { start() }
         }
-        .onChange(of: store.preferences.enabledProviders) { _, enabled in
-            if showingQuota {
-                if let provider = history.provider, !enabled.contains(provider) { history.provider = nil }
-            } else { configure() }
+        .onChange(of: store.providers) { _, enabled in
+            if let provider = history.provider, !enabled.contains(provider) { history.provider = nil }
+            if !showingQuota { configure() }
         }
         .onChange(of: store.preferences.refreshInterval) { _, _ in configure() }
         .onChange(of: history.range) { _, _ in clearSelection() }
@@ -91,11 +90,11 @@ struct UsageHistoryView: View {
 
     private func start() {
         guard !showingSettings, !showingQuota else { return }
-        history.start(enabledProviders: store.preferences.enabledProviders, automatic: store.preferences.refreshInterval != .manual)
+        history.start(enabledProviders: Set(store.providers), automatic: store.preferences.refreshInterval != .manual)
     }
     private func configure() {
         guard !showingSettings, !showingQuota else { return }
-        history.configure(enabledProviders: store.preferences.enabledProviders, automatic: store.preferences.refreshInterval != .manual)
+        history.configure(enabledProviders: Set(store.providers), automatic: store.preferences.refreshInterval != .manual)
     }
     private func clearSelection() {
         selectedBucketID = nil
@@ -136,7 +135,7 @@ struct UsageHistoryView: View {
                     .accessibilityLabel(L10n.text("筛选 ") + provider.title)
             }
             Spacer()
-            Text(L10n.text("仅统计这台 Mac\n跟随系统外观")).font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4).padding(10)
+            Text(L10n.text("仅统计这台 Mac") + "\n" + L10n.text(store.preferences.theme.title)).font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4).padding(10)
         }.padding(.horizontal, 14).padding(.top, 28).padding(.bottom, 14).frame(width: 210)
             .background(Color(nsColor: .underPageBackgroundColor))
     }

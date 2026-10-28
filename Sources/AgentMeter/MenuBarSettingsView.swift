@@ -5,6 +5,7 @@ struct MenuBarSettingsView: View {
     @ObservedObject var store: MeterStore
     @State private var editingProvider = "all"
 
+    private var visibleProviderOrder: [ProviderID] { store.preferences.menuBar.orderedProviders.filter { store.providers.contains($0) } }
     private var provider: ProviderID? { ProviderID(rawValue: editingProvider) }
     private var editedLayout: MenuBarLayout {
         provider.map { store.preferences.menuBar.layout(for: $0) } ?? store.preferences.menuBar.layout
@@ -33,6 +34,9 @@ struct MenuBarSettingsView: View {
                     .accessibilityIdentifier("NowBarResetMenuLayout")
             }.padding(.horizontal, 2)
         }.font(.system(size: 12)).controlSize(.regular)
+            .onChange(of: store.providers) { _, providers in
+                if let provider, !providers.contains(provider) { editingProvider = "all" }
+            }
     }
 
     private var preview: some View {
@@ -63,7 +67,7 @@ struct MenuBarSettingsView: View {
                     WorkspaceSettingRow(L10n.text("应用到")) {
                         Picker(L10n.text("应用到"), selection: $editingProvider) {
                             Text(L10n.text("所有服务的默认布局")).tag("all")
-                            ForEach(ProviderID.allCases) { Text($0.title).tag($0.rawValue) }
+                            ForEach(store.providers) { Text($0.title).tag($0.rawValue) }
                         }.labelsHidden().accessibilityLabel(L10n.text("应用到"))
                     }
                     if let provider {
@@ -183,7 +187,7 @@ struct MenuBarSettingsView: View {
                         }.labelsHidden().accessibilityLabel(L10n.text("常显服务"))
                     }
                     Divider()
-                    ForEach(Array(store.preferences.menuBar.orderedProviders.enumerated()), id: \.element) { index, provider in
+                    ForEach(Array(visibleProviderOrder.enumerated()), id: \.element) { index, provider in
                         HStack(spacing: 12) {
                             ProviderMark(name: provider.iconName, size: 17, color: .primary).frame(width: 20)
                             Text(provider.title).font(.system(size: 12, weight: .medium))
@@ -197,7 +201,7 @@ struct MenuBarSettingsView: View {
                                     ForEach(store.snapshot(provider).windows) { Text(L10n.text($0.title)).tag($0.id) }
                                 }.labelsHidden().accessibilityLabel(provider.title + " " + L10n.text("常显额度"))
                                     .frame(width: 155)
-                                    .disabled(!store.preferences.enabledProviders.contains(provider))
+                                    .disabled(!store.providers.contains(provider))
                             } else {
                                 Text(L10n.text("额度暂未提供")).font(.system(size: 11)).foregroundStyle(.secondary)
                                     .frame(width: 155, alignment: .trailing)
@@ -205,14 +209,14 @@ struct MenuBarSettingsView: View {
                             Toggle(provider.title, isOn: Binding(get: { store.isMenuVisible(provider) }, set: {
                                 store.setMenuVisible(provider, visible: $0)
                             })).labelsHidden().accessibilityLabel(provider.title).toggleStyle(.switch).controlSize(.small)
-                                .disabled(!store.preferences.enabledProviders.contains(provider))
+                                .disabled(!store.providers.contains(provider))
                             HStack(spacing: 4) {
                                 Button { moveProvider(from: index, to: index - 1) } label: {
                                     Image(systemName: "chevron.up").frame(width: 20, height: 24)
                                 }.disabled(index == 0).accessibilityLabel(L10n.format("上移 %@", provider.title))
                                 Button { moveProvider(from: index, to: index + 1) } label: {
                                     Image(systemName: "chevron.down").frame(width: 20, height: 24)
-                                }.disabled(index == store.preferences.menuBar.orderedProviders.count - 1)
+                                }.disabled(index == visibleProviderOrder.count - 1)
                                     .accessibilityLabel(L10n.format("下移 %@", provider.title))
                             }.buttonStyle(.borderless).foregroundStyle(.secondary)
                         }.padding(.vertical, 4).contentShape(Rectangle())
@@ -220,11 +224,11 @@ struct MenuBarSettingsView: View {
                             .dropDestination(for: String.self) { values, _ in
                                 guard let value = values.first, value.hasPrefix("NowBarProvider:"),
                                       let id = ProviderID(rawValue: String(value.dropFirst("NowBarProvider:".count))),
-                                      let source = store.preferences.menuBar.orderedProviders.firstIndex(of: id) else { return false }
+                                      let source = visibleProviderOrder.firstIndex(of: id) else { return false }
                                 moveProvider(from: source, to: index)
                                 return true
                             }
-                        if index < store.preferences.menuBar.orderedProviders.count - 1 { Divider() }
+                        if index < visibleProviderOrder.count - 1 { Divider() }
                     }
                 }
             }
@@ -307,11 +311,14 @@ struct MenuBarSettingsView: View {
         layout.wrappedValue = value
     }
     private func moveProvider(from source: Int, to destination: Int) {
-        var order = store.preferences.menuBar.orderedProviders
+        var order = visibleProviderOrder
         guard order.indices.contains(source), order.indices.contains(destination), source != destination else { return }
         let provider = order.remove(at: source)
         order.insert(provider, at: destination)
-        store.preferences.menuBar.providerOrder = order
+        var next = order.makeIterator()
+        store.preferences.menuBar.providerOrder = store.preferences.menuBar.orderedProviders.map {
+            store.providers.contains($0) ? next.next()! : $0
+        }
     }
     private func quotaSelection(_ provider: ProviderID) -> Binding<String> {
         Binding(get: {

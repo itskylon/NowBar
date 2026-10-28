@@ -24,7 +24,7 @@ struct QuotaUsageView: View {
                 if providers.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "gauge.with.dots.needle.33percent").font(.system(size: 28)).foregroundStyle(.tertiary)
-                        Text(L10n.text("所选服务尚未启用")).font(.system(size: 14, weight: .medium))
+                        Text(L10n.text(store.installedProviders.isEmpty ? "未检测到支持的应用" : "所选服务尚未启用")).font(.system(size: 14, weight: .medium))
                         Button(L10n.text("前往服务设置"), action: settings)
                     }.frame(maxWidth: .infinity).padding(.vertical, 60)
                 } else {

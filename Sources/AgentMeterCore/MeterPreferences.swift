@@ -36,8 +36,21 @@ public enum ResetTimeStyle: String, Codable, CaseIterable, Sendable {
     public var title: String { self == .countdown ? "倒计时" : "绝对时间" }
 }
 
+public enum AppTheme: String, Codable, CaseIterable, Identifiable, Sendable {
+    case system, light, dark
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .system: "跟随系统外观"
+        case .light: "浅色"
+        case .dark: "深色"
+        }
+    }
+}
+
 public struct MeterPreferences: Codable, Equatable, Sendable {
     public var language: AppLanguage = .system
+    public var theme: AppTheme = .system
     public var refreshInterval: RefreshInterval = .oneMinute
     public var quotaDisplay: QuotaDisplayMode = .remaining
     public var resetTimeStyle: ResetTimeStyle = .countdown
@@ -60,13 +73,14 @@ public struct MeterPreferences: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case language, refreshInterval, quotaDisplay, resetTimeStyle, enabledProviders, lowQuotaAlerts, resetAlerts, menuBar
+        case language, theme, refreshInterval, quotaDisplay, resetTimeStyle, enabledProviders, lowQuotaAlerts, resetAlerts, menuBar
     }
 
     public init(from decoder: Decoder) throws {
         self.init()
         let values = try decoder.container(keyedBy: CodingKeys.self)
         language = (try? values.decode(AppLanguage.self, forKey: .language)) ?? language
+        theme = (try? values.decode(AppTheme.self, forKey: .theme)) ?? theme
         refreshInterval = (try? values.decode(RefreshInterval.self, forKey: .refreshInterval)) ?? refreshInterval
         quotaDisplay = (try? values.decode(QuotaDisplayMode.self, forKey: .quotaDisplay)) ?? quotaDisplay
         resetTimeStyle = (try? values.decode(ResetTimeStyle.self, forKey: .resetTimeStyle)) ?? resetTimeStyle

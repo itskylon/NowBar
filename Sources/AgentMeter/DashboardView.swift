@@ -90,9 +90,19 @@ struct DashboardView: View {
             header.padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 12).frame(height: 52)
             ScrollView {
                 VStack(spacing: 12) {
-                    quotaCard
-                    usageCard
-                    trendCard
+                    if store.providers.isEmpty && !referencePreview {
+                        VStack(spacing: 12) {
+                            Image(systemName: "app.dashed").font(.system(size: 26)).foregroundStyle(.secondary)
+                            Text(L10n.text(store.installedProviders.isEmpty ? "未检测到支持的应用" : "尚未启用服务")).font(.system(size: 14, weight: .semibold))
+                            Text(L10n.text(store.installedProviders.isEmpty ? "安装 Codex、Claude 或 Grok Bot 后可在设置中启用。" : "在服务设置中开启需要显示的服务。"))
+                                .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                            Button(L10n.text("前往服务设置"), action: settings)
+                        }.frame(maxWidth: .infinity).padding(.vertical, 28)
+                    } else {
+                        quotaCard
+                        usageCard
+                        trendCard
+                    }
                     PanelActions(store: store, updates: store.updates, settings: settings, usage: usage, about: about)
                 }.padding(.horizontal, 12).padding(.bottom, 12)
                     .fixedSize(horizontal: false, vertical: true)

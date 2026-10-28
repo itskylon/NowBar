@@ -27,6 +27,10 @@ struct LanguageAcceptance {
         expect(L10n.text("额度为上次 Claude Code 会话快照，等待会话更新。 部分额度窗口已过期，等待 Claude Code 刷新。").range(of: "\\p{Han}", options: .regularExpression) == nil, "Combined cached source messages translate")
         expect(L10n.text("无法更改登录时启动：Permission denied\n登录时启动未启用。") == "Unable to change launch at login: Permission denied\nLaunch at login is disabled.", "Combined login error preserves details and translates status")
         expect(L10n.text("Claude 桥接未安装。") == "Claude connection is not installed.", "Absent bridge status translates")
+        for text in ["自动检测服务", "重新检测", "已安装", "未检测到支持的应用", "未安装该服务，无法启用。", "尚未启用服务", "在服务设置中开启需要显示的服务。", "检测到 Codex、Claude 后默认启用；Grok Bot 等其他服务需手动开启。未安装的服务不会显示，也无法启用。", "安装或卸载后会自动更新，也可点击重新检测。你的开关选择会保留，重新检测或重启不会重置。"] {
+            expect(L10n.text(text).range(of: "\\p{Han}", options: .regularExpression) == nil, "Installation states translate: " + text)
+        }
+        expect(AppTheme.allCases.map { L10n.text($0.title) } == ["System appearance", "Light", "Dark"], "Theme labels translate in English")
         let record = UsageRecord(id: "one", date: now, provider: .codex, model: "my-model", tokens: .init(input: 10), estimatedCostUSD: 0.01, projectPath: "/projects/每周", sessionID: "abcdefghijk", conversationID: "123456789")
         let history = UsageHistoryStore(previewRecords: [record], now: now)
         history.grouping = .session

@@ -32,3 +32,6 @@ swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD"
   Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Sources/AgentMeter/AppUpdateController.swift \
   Sources/AgentMeter/NativePanel.swift Sources/AgentMeter/MenuBarPresentation.swift Tests/MenuBarPresentationAcceptance.swift -o "$METER_BUILD/MenuBarPresentationAcceptance"
 "$METER_BUILD/MenuBarPresentationAcceptance"
+swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
+  Sources/AgentMeter/AppThemeController.swift Tests/AppearanceAcceptance.swift -o "$METER_BUILD/AppearanceAcceptance"
+"$METER_BUILD/AppearanceAcceptance"

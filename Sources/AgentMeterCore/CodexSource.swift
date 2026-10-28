@@ -137,12 +137,7 @@ public enum CodexSource {
     }
 
     private static func findExecutable() throws -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        var paths = ["\(home)/.local/bin/codex", "/opt/homebrew/bin/codex", "/usr/local/bin/codex",
-                     "/Applications/Codex.app/Contents/Resources/codex", "\(home)/Applications/Codex.app/Contents/Resources/codex",
-                     "/Applications/Extra/Codex.app/Contents/Resources/codex"]
-        paths += (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/codex" }
-        guard let path = paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { throw CodexReadError.missingCLI }
+        guard let path = ProviderInstallation.executable(named: "codex") else { throw CodexReadError.missingCLI }
         return path
     }
 }

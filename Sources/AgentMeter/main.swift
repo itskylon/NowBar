@@ -17,6 +17,7 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     private var usageWindow: NSWindow?
     private var changes: AnyCancellable?
     private var updateChanges: AnyCancellable?
+    private var appliedTheme: AppTheme?
     private var wakeObserver: NSObjectProtocol?
     private var showingUpdateAlert = false
     private lazy var shortcuts = MeterShortcutMenu(
@@ -37,6 +38,7 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.applicationIconImage = AppBrand.icon
         store = MeterStore(demo: CommandLine.arguments.contains("--demo"))
+        updateTheme()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.title = ""
@@ -62,7 +64,10 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
            about: { [weak self] in self?.showAbout() }))
         panel.contentView = hosting
         changes = store.objectWillChange.sink { [weak self] in
-            DispatchQueue.main.async { self?.updateStatusLabel() }
+            DispatchQueue.main.async {
+                self?.updateTheme()
+                self?.updateStatusLabel()
+            }
         }
         updateChanges = store.updates.objectWillChange.sink { [weak self] in
             DispatchQueue.main.async { self?.updateApplicationMenu() }
@@ -107,6 +112,12 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     func applicationDidBecomeActive(_ notification: Notification) {
         store?.systemServices.refreshStatus()
         store?.updates.checkAutomaticallyIfDue()
+    }
+
+    private func updateTheme() {
+        guard appliedTheme != store.preferences.theme else { return }
+        appliedTheme = store.preferences.theme
+        AppThemeController.apply(store.preferences.theme)
     }
 
     private func updateStatusLabel() {
@@ -166,7 +177,7 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         let alert = NSAlert()
         alert.icon = AppBrand.icon
         alert.messageText = L10n.text("关于 NowBar")
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "15"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "17"
         alert.informativeText = L10n.format("版本 %@（%@）", store.updates.currentVersion, build) + "\n\n" + L10n.text("AI 用量，抬眼可见。")
         alert.addButton(withTitle: L10n.text("好"))
         alert.addButton(withTitle: L10n.text("检查更新…"))
@@ -296,12 +307,14 @@ func renderPreview(path: String, dark: Bool) throws {
     var snapshots: [ProviderSnapshot]?
     if empty { snapshots = [] }
     else if live {
-        snapshots = ProviderID.allCases.map { provider in
+        snapshots = ProviderID.allCases.filter { ProviderInstallation.detect().contains($0) }.map { provider in
             do { return try ProviderSource.load(provider) }
             catch { return ProviderSnapshot(provider: provider, message: error.localizedDescription) }
         }
     }
     let store = MeterStore(demo: reference || (!live && !empty), previewSnapshots: snapshots)
+    if live { store.applyDetectedProviders(ProviderInstallation.detect()) }
+    if CommandLine.arguments.contains("--no-installed-apps") { store.applyDetectedProviders([]) }
     if let index = CommandLine.arguments.firstIndex(of: "--language"), CommandLine.arguments.count > index + 1,
        let language = AppLanguage(rawValue: CommandLine.arguments[index + 1]) {
         store.preferences.language = language

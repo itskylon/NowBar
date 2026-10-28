@@ -9,7 +9,7 @@ struct MeterSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 WorkspacePageHeader(title: L10n.text("通用与服务设置"), subtitle: L10n.text("AI 用量，抬眼可见。")) {
-                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.6.6")
+                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.6.8")
                         .font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(.secondary)
                         .padding(.horizontal, 9).padding(.vertical, 5)
                         .background(Color.primary.opacity(0.045), in: Capsule())
@@ -36,45 +36,51 @@ struct MeterSettingsView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .environment(\.locale, L10n.locale)
-        .onAppear { store.checkBridge(); store.systemServices.refreshStatus() }
+        .onAppear { store.rescanInstalledProviders(); store.checkBridge(); store.systemServices.refreshStatus() }
     }
 
     private var serviceSettings: some View {
         VStack(alignment: .leading, spacing: 16) {
-            WorkspaceCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    providerHeading(.codex)
-                    serviceCaption("额度使用已登录的 Codex CLI。Token、模型和参考费用读取本机日志，按本地日期统计，包含子任务；自动模式约每 5 秒更新。无需复制密钥。")
-                    Link(L10n.text("查看 Codex 用量"), destination: URL(string: "https://chatgpt.com/codex/settings/usage")!)
-                }
-            }
-            WorkspaceCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    providerHeading(.claude)
-                    serviceCaption("自动读取这台 Mac 已登录的 Claude 桌面版账户，显示已用、剩余和重置时间。Free 套餐的 5 小时额度读取桌面缓存，随正常聊天更新。")
-                    serviceCaption("Token、模型和参考费用读取本机 Claude Code / Cowork 会话日志。普通桌面聊天未提供每日精确 Token，不会根据额度百分比估算。")
-                    Link(L10n.text("查看 Claude 用量"), destination: URL(string: "https://claude.ai/settings/usage")!)
-                    Divider().padding(.vertical, 2)
-                    Text(L10n.text("可选：Claude Code 状态栏接入")).font(.system(size: 12, weight: .semibold))
-                    serviceCaption("未使用桌面版时，可通过 Claude Code 状态栏读取订阅额度，在 Claude 响应后更新。桌面版接入无需安装此桥接。")
-                    serviceCaption("接入会备份设置并保留你原有的状态栏命令。可随时移除。项目级 statusLine 配置可能优先于此接入。")
-                    HStack(spacing: 10) {
-                        Button(store.bridgeInstalled ? L10n.text("移除 Claude Code 额度接入") : L10n.text("接入 Claude Code 额度")) { store.setBridge(enabled: !store.bridgeInstalled) }
-                            .disabled(store.bridgeBusy || store.demo)
-                        if store.bridgeBusy { ProgressView().controlSize(.small) }
-                        else if store.bridgeInstalled {
-                            Label(L10n.text("已接入"), systemImage: "checkmark.circle.fill").foregroundStyle(.teal).font(.system(size: 11))
-                        }
+            if store.providers.contains(.codex) {
+                WorkspaceCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        providerHeading(.codex)
+                        serviceCaption("额度使用已登录的 Codex CLI。Token、模型和参考费用读取本机日志，按本地日期统计，包含子任务；自动模式约每 5 秒更新。无需复制密钥。")
+                        Link(L10n.text("查看 Codex 用量"), destination: URL(string: "https://chatgpt.com/codex/settings/usage")!)
                     }
-                    if let message = store.bridgeMessage { serviceCaption(message) }
                 }
             }
-            WorkspaceCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    providerHeading(.grokBot)
-                    serviceCaption("自动读取这台 Mac 已登录的 Grok Bot 账户，显示每周剩余额度和重置时间。请先在 Grok Bot 完成登录。")
-                    serviceCaption("只读使用本机登录状态向 Grok 官方查询，不修改 Grok Bot 设置，不发起对话。当前接口未提供 Token、费用和历史明细。")
-                    Link(L10n.text("Grok Bot 官方说明"), destination: URL(string: "https://docs.x.ai/grok-bot/overview")!)
+            if store.providers.contains(.claude) {
+                WorkspaceCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        providerHeading(.claude)
+                        serviceCaption("自动读取这台 Mac 已登录的 Claude 桌面版账户，显示已用、剩余和重置时间。Free 套餐的 5 小时额度读取桌面缓存，随正常聊天更新。")
+                        serviceCaption("Token、模型和参考费用读取本机 Claude Code / Cowork 会话日志。普通桌面聊天未提供每日精确 Token，不会根据额度百分比估算。")
+                        Link(L10n.text("查看 Claude 用量"), destination: URL(string: "https://claude.ai/settings/usage")!)
+                        Divider().padding(.vertical, 2)
+                        Text(L10n.text("可选：Claude Code 状态栏接入")).font(.system(size: 12, weight: .semibold))
+                        serviceCaption("未使用桌面版时，可通过 Claude Code 状态栏读取订阅额度，在 Claude 响应后更新。桌面版接入无需安装此桥接。")
+                        serviceCaption("接入会备份设置并保留你原有的状态栏命令。可随时移除。项目级 statusLine 配置可能优先于此接入。")
+                        HStack(spacing: 10) {
+                            Button(store.bridgeInstalled ? L10n.text("移除 Claude Code 额度接入") : L10n.text("接入 Claude Code 额度")) { store.setBridge(enabled: !store.bridgeInstalled) }
+                                .disabled(store.bridgeBusy || store.demo)
+                            if store.bridgeBusy { ProgressView().controlSize(.small) }
+                            else if store.bridgeInstalled {
+                                Label(L10n.text("已接入"), systemImage: "checkmark.circle.fill").foregroundStyle(.teal).font(.system(size: 11))
+                            }
+                        }
+                        if let message = store.bridgeMessage { serviceCaption(message) }
+                    }
+                }
+            }
+            if store.providers.contains(.grokBot) {
+                WorkspaceCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        providerHeading(.grokBot)
+                        serviceCaption("自动读取这台 Mac 已登录的 Grok Bot 账户，显示每周剩余额度和重置时间。请先在 Grok Bot 完成登录。")
+                        serviceCaption("只读使用本机登录状态向 Grok 官方查询，不修改 Grok Bot 设置，不发起对话。当前接口未提供 Token、费用和历史明细。")
+                        Link(L10n.text("Grok Bot 官方说明"), destination: URL(string: "https://docs.x.ai/grok-bot/overview")!)
+                    }
                 }
             }
             WorkspaceCard {
@@ -87,7 +93,9 @@ struct MeterSettingsView: View {
                     HStack {
                         Button(L10n.text("打开本地数据目录"), action: store.openSupport)
                         Spacer(minLength: 12)
-                        Link(L10n.text("Claude 接入说明"), destination: URL(string: "https://code.claude.com/docs/en/statusline")!)
+                        if store.providers.contains(.claude) {
+                            Link(L10n.text("Claude 接入说明"), destination: URL(string: "https://code.claude.com/docs/en/statusline")!)
+                        }
                     }
                 }
             }
@@ -124,6 +132,18 @@ private struct MeterGeneralSettings: View {
                     caption("默认跟随系统，也可单独选择中文或英文；切换后立即生效。")
                 }
             }
+            WorkspaceCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionHeading("外观", icon: "paintpalette")
+                    WorkspaceSettingRow(L10n.text("应用外观")) {
+                        Picker(L10n.text("应用外观"), selection: $store.preferences.theme) {
+                            ForEach(AppTheme.allCases) { theme in Text(L10n.text(theme.title)).tag(theme) }
+                        }.labelsHidden().accessibilityLabel(L10n.text("应用外观"))
+                            .accessibilityIdentifier("NowBarAppTheme")
+                    }
+                    caption("默认跟随系统，也可独立选择浅色或深色；切换后立即生效。")
+                }
+            }
             WorkspaceCard { MeterUpdateSettings(updates: store.updates) }
             WorkspaceCard {
                 VStack(alignment: .leading, spacing: 12) {
@@ -145,24 +165,32 @@ private struct MeterGeneralSettings: View {
                             ForEach(ResetTimeStyle.allCases, id: \.self) { Text(L10n.text($0.title)).tag($0) }
                         }.labelsHidden().accessibilityLabel(L10n.text("重置时间"))
                     }
-                    caption("本机 Codex 日志约每 5 秒更新，账户额度按上述频率刷新。手动模式停止周期读取，倒计时继续更新；启动和重新启用服务仍会读取一次。")
+                    caption("本机 Codex 日志约每 5 秒更新，账户额度按上述频率刷新。手动模式停止周期读取，倒计时继续更新；启动和检测到新安装的服务时仍会读取一次。")
                 }
             }
             WorkspaceCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    sectionHeading("启用的服务", icon: "square.stack.3d.up")
-                    ForEach(Array(ProviderID.allCases.enumerated()), id: \.element) { index, provider in
+                    HStack {
+                        sectionHeading("自动检测服务", icon: "square.stack.3d.up")
+                        Spacer()
+                        Button(L10n.text("重新检测"), action: store.rescanInstalledProviders)
+                            .disabled(store.demo)
+                    }
+                    if store.availableProviders.isEmpty { caption("未检测到支持的应用") }
+                    ForEach(Array(store.availableProviders.enumerated()), id: \.element) { index, provider in
                         if index > 0 { Divider() }
                         HStack(spacing: 10) {
                             ProviderMark(name: provider.iconName, size: 18, color: .primary)
                             Text(provider.title).font(.system(size: 12, weight: .medium))
                             Spacer(minLength: 16)
-                            Toggle(provider.title, isOn: Binding(get: { store.preferences.enabledProviders.contains(provider) },
-                                set: { store.setProvider(provider, enabled: $0) }))
-                                .labelsHidden().accessibilityLabel(provider.title).fixedSize()
+                            Toggle(provider.title, isOn: Binding(get: { store.providers.contains(provider) }, set: {
+                                store.setProvider(provider, enabled: $0)
+                            })).labelsHidden().accessibilityLabel(provider.title)
+                                .accessibilityIdentifier("NowBarEnable" + provider.rawValue).fixedSize()
                         }.frame(minHeight: 26)
                     }
-                    caption(store.providerMessage ?? L10n.text("关闭后隐藏该服务并停止读取，保留本机历史与菜单栏选择。至少保留一个服务。"))
+                    caption("检测到 Codex、Claude 后默认启用；Grok Bot 等其他服务需手动开启。未安装的服务不会显示，也无法启用。")
+                    caption("安装或卸载后会自动更新，也可点击重新检测。你的开关选择会保留，重新检测或重启不会重置。")
                 }
             }
             WorkspaceCard {

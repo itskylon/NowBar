@@ -6,6 +6,7 @@ import AgentMeterCore
 @MainActor
 final class MeterStore: ObservableObject {
     @Published var snapshots: [ProviderSnapshot] = []
+    @Published private(set) var installedProviders: Set<ProviderID> = Set(ProviderID.allCases)
     @Published var refreshing = false
     @Published var selected: ProviderID = .codex {
         didSet { if !demo && !preview { UserDefaults.standard.set(selected.rawValue, forKey: "selectedProvider") } }
@@ -24,7 +25,7 @@ final class MeterStore: ObservableObject {
             guard !demo, !preview else { return }
             if let data = try? JSONEncoder().encode(preferences) { UserDefaults.standard.set(data, forKey: "meterPreferences.v1") }
             if preferences.refreshInterval != oldValue.refreshInterval { scheduleRefresh() }
-            if !preferences.enabledProviders.subtracting(oldValue.enabledProviders).isEmpty { refresh() }
+            if !applyingDetection, !preferences.enabledProviders.subtracting(oldValue.enabledProviders).isEmpty { refresh() }
         }
     }
     let systemServices: MeterSystemServices
@@ -36,6 +37,8 @@ final class MeterStore: ObservableObject {
     private var localUsageTimer: Timer?
     private var readingLocalUsage = false
     private var refreshPending = false
+    private var applyingDetection = false
+    private var providerChoices: [ProviderID: Bool] = [:]
     private var alertTracker = QuotaAlertTracker()
     private let support = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/AgentMeter", isDirectory: true)
@@ -54,6 +57,15 @@ final class MeterStore: ObservableObject {
         if let value = UserDefaults.standard.string(forKey: "selectedProvider"), let id = ProviderID(rawValue: value) { selected = id }
         if !providers.contains(selected), let first = providers.first { selected = first }
         if let values = UserDefaults.standard.stringArray(forKey: "pinnedWindows") { pins = Set(values) }
+        if let choices = UserDefaults.standard.dictionary(forKey: "providerEnablement.v1") as? [String: Bool] {
+            providerChoices = Dictionary(uniqueKeysWithValues: choices.compactMap { key, enabled in
+                ProviderID(rawValue: key).map { ($0, enabled) }
+            })
+        }
+        let previousInstallations = UserDefaults.standard.stringArray(forKey: "installedProviders.v1")
+        installedProviders = previousInstallations.map { Set($0.compactMap(ProviderID.init(rawValue:))) }
+            ?? (UserDefaults.standard.stringArray(forKey: "pinnedWindows") == nil ? [] : preferences.enabledProviders)
+        applyDetectedProviders(Self.findInstalledProviders())
         let file = support.appendingPathComponent("dashboard-cache.json")
         if let data = try? Data(contentsOf: file), let cached = try? JSONDecoder().decode([ProviderSnapshot].self, from: data) {
             snapshots = cached.map {
@@ -68,7 +80,11 @@ final class MeterStore: ObservableObject {
         }
         scheduleRefresh()
         displayTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.displayNow = Date() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.displayNow = Date()
+                if self.detectInstalledProviders() { self.refresh() }
+            }
         }
         localUsageTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshLocalUsage() }
@@ -81,7 +97,8 @@ final class MeterStore: ObservableObject {
     func snapshot(_ provider: ProviderID) -> ProviderSnapshot {
         snapshots.first { $0.provider == provider } ?? .init(provider: provider, message: refreshing ? "正在读取用量…" : "尚未接入")
     }
-    var providers: [ProviderID] { (demo ? [.codex, .claude] : ProviderID.allCases).filter { preferences.enabledProviders.contains($0) } }
+    var availableProviders: [ProviderID] { ProviderID.allCases.filter { installedProviders.contains($0) } }
+    var providers: [ProviderID] { (demo ? [.codex, .claude] : ProviderID.allCases).filter { installedProviders.contains($0) && preferences.enabledProviders.contains($0) } }
     func quotaPercent(_ window: LimitWindow) -> Double { preferences.quotaDisplay.percent(for: window) }
     var current: ProviderSnapshot { snapshot(selected) }
     var todayKey: String {
@@ -139,12 +156,68 @@ final class MeterStore: ObservableObject {
         if !demo && !preview { UserDefaults.standard.set(Array(pins).sorted(), forKey: "pinnedWindows") }
     }
 
-    func setProvider(_ provider: ProviderID, enabled: Bool) {
-        guard enabled || providers != [provider] else { providerMessage = "至少保留一个服务。"; return }
-        var value = preferences
-        guard value.setProvider(provider, enabled: enabled) else { providerMessage = "至少保留一个服务。"; return }
+    private func enabledProviders(for installed: Set<ProviderID>) -> Set<ProviderID> {
+        installed.filter { providerChoices[$0] ?? ($0 == .codex || $0 == .claude) }
+    }
+
+    /// Installation bounds availability; explicit choices override the primary-service defaults.
+    func applyDetectedProviders(_ detected: Set<ProviderID>) {
+        let enabled = enabledProviders(for: detected)
+        let added = enabled.subtracting(Set(providers))
+        applyingDetection = true
+        defer { applyingDetection = false }
+        installedProviders = detected
+        if !demo && !preview {
+            UserDefaults.standard.set(detected.map(\.rawValue).sorted(), forKey: "installedProviders.v1")
+        }
+        preferences.enabledProviders = enabled
+        if !providers.contains(selected), let first = providers.first { selected = first }
+        for provider in added where !isMenuVisible(provider) {
+            setMenuVisible(provider, visible: true)
+        }
         providerMessage = nil
-        preferences = value
+    }
+
+    private static func findInstalledProviders() -> Set<ProviderID> {
+        var directories = [URL(fileURLWithPath: "/Applications"),
+                           FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")]
+        // Launch Services also finds registered apps that were renamed or moved elsewhere.
+        for identifier in ProviderInstallation.bundleIdentifiers.values {
+            if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) {
+                directories.append(app.deletingLastPathComponent())
+            }
+        }
+        return ProviderInstallation.detect(applicationDirectories: Array(Set(directories)))
+    }
+
+    @discardableResult
+    private func detectInstalledProviders() -> Bool {
+        let detected = Self.findInstalledProviders()
+        guard detected != installedProviders || preferences.enabledProviders != enabledProviders(for: detected) else { return false }
+        applyDetectedProviders(detected)
+        return true
+    }
+
+    func rescanInstalledProviders() {
+        guard !demo, !preview else { return }
+        if detectInstalledProviders() { refresh() }
+    }
+
+    func setProvider(_ provider: ProviderID, enabled: Bool) {
+        if !demo && !preview { detectInstalledProviders() }
+        guard !enabled || installedProviders.contains(provider) else { providerMessage = "未安装该服务，无法启用。"; return }
+        providerChoices[provider] = enabled
+        if !demo && !preview {
+            UserDefaults.standard.set(Dictionary(uniqueKeysWithValues: providerChoices.map { ($0.key.rawValue, $0.value) }),
+                                      forKey: "providerEnablement.v1")
+        }
+        providerMessage = nil
+        if enabled {
+            preferences.enabledProviders.insert(provider)
+            if !isMenuVisible(provider) { setMenuVisible(provider, visible: true) }
+        } else {
+            preferences.enabledProviders.remove(provider)
+        }
     }
 
     func setLowQuotaAlerts(_ enabled: Bool) { setAlerts(enabled, reset: false) }
@@ -173,6 +246,7 @@ final class MeterStore: ObservableObject {
 
     func refresh() {
         guard !demo, !preview else { return }
+        detectInstalledProviders()
         if refreshing { refreshPending = true; return }
         refreshing = true
         let previous = snapshots
@@ -297,7 +371,7 @@ final class MeterStore: ObservableObject {
         }
     }
     func setBridge(enabled: Bool) {
-        guard !bridgeBusy, !demo, !preview else { return }
+        guard !bridgeBusy, !demo, !preview, !enabled || installedProviders.contains(.claude) else { return }
         bridgeBusy = true
         Task {
             let (status, text) = await runBridge(enabled ? "--install" : "--uninstall")

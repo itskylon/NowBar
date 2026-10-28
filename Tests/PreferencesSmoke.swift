@@ -6,6 +6,9 @@ enum PreferencesSmoke {
 
     static func main() throws {
         let defaults = MeterPreferences()
+        try check(defaults.theme == .system, "default theme follows the system")
+        try check(try decode(#"{"theme":"light"}"#).theme == .light, "light theme restores from preferences")
+        try check(try decode(#"{"theme":"invalid"}"#).theme == .system, "unknown theme falls back to the system")
         try check(defaults.refreshInterval == .oneMinute, "default refresh is one minute")
         try check(defaults.quotaDisplay == .remaining, "default quota display is remaining")
         try check(defaults.resetTimeStyle == .countdown, "default reset display is countdown")
@@ -49,6 +52,7 @@ enum PreferencesSmoke {
                   "a hidden provider can be enabled again")
 
         var saved = defaults
+        saved.theme = .dark
         saved.refreshInterval = .manual
         saved.quotaDisplay = .used
         saved.resetTimeStyle = .absolute
