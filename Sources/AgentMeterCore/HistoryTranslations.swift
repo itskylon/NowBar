@@ -116,7 +116,7 @@ enum HistoryTranslations {
         "显示全部（%@）": "Show all (%@)",
         " · %@ 条用量记录": " · %@ usage records",
         "%@ 条记录": "%@ records",
-        "重置时间按电脑当前时区显示：%@。刷新读取已启用服务的最新额度；Claude 快照随 Claude Code 会话活动更新。": "Reset times use your Mac time zone: %@. Refresh checks enabled services; Claude snapshots update during Claude Code session activity.",
+        "重置时间按电脑当前时区显示：%@。刷新读取已启用服务的额度；Claude 桌面缓存和 Code 桥接快照随聊天或会话更新。": "Reset times use your Mac time zone: %@. Refresh reads enabled services; Claude desktop cache and Code bridge snapshots update during chats or sessions.",
         "聊天 %@": "Chat %@",
         "会话 %@": "Session %@",
         "%@ 个会话": "%@ sessions",

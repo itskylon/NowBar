@@ -183,8 +183,14 @@ struct DashboardView: View {
                 }
                 Spacer()
                 if value.windows.isEmpty, provider == .claude {
-                    Button(L10n.text("连接"), action: settings).font(.system(size: 11, weight: .light)).foregroundStyle(ReferenceStyle.secondary)
-                        .accessibilityLabel(L10n.text("连接 Claude Code"))
+                    if value.quotaSource == .claudeDesktop {
+                        Link(L10n.text("查看用量"), destination: URL(string: "https://claude.ai/settings/usage")!)
+                            .font(.system(size: 11, weight: .light)).foregroundStyle(ReferenceStyle.secondary)
+                            .accessibilityLabel(L10n.text("查看 Claude 用量"))
+                    } else {
+                        Button(L10n.text("连接"), action: settings).font(.system(size: 11, weight: .light)).foregroundStyle(ReferenceStyle.secondary)
+                            .accessibilityLabel(L10n.text("连接 Claude Code"))
+                    }
                 }
             }.frame(height: 20).padding(.trailing, value.windows.isEmpty ? 16 : 56)
                 .help([MeterFormat.updated(value.updatedAt), value.message.map(L10n.text)].compactMap { $0 }.joined(separator: " · "))
@@ -198,11 +204,25 @@ struct DashboardView: View {
                 }
                 ForEach(extraWindows) { window in quotaRow(provider, window) }
             }
+            if provider == .claude, value.quotaSource == .claudeDesktop {
+                VStack(alignment: .leading, spacing: 4) {
+                    if value.quotaFromCache == true {
+                        Text(L10n.text("Claude 桌面缓存 · 5 小时额度") + " · " + MeterFormat.updated(value.updatedAt))
+                        Text(L10n.text("随 Claude 聊天更新；重置后等待新数据。"))
+                    } else {
+                        Text(L10n.text("Claude 桌面版 · 账户共享额度"))
+                    }
+                    if let message = value.quotaMessage {
+                        Text(L10n.text(message)).fixedSize(horizontal: false, vertical: true)
+                    }
+                }.font(.system(size: 10, weight: .light)).foregroundStyle(ReferenceStyle.secondary)
+                    .padding(.trailing, 16)
+            }
         }.padding(.leading, 12).padding(.vertical, 14)
     }
 
     private func unavailableQuotaRow(_ provider: ProviderID, title: String, snapshot: ProviderSnapshot) -> some View {
-        let disconnected = provider == .claude && !store.bridgeInstalled
+        let disconnected = provider == .claude && snapshot.quotaSource != .claudeDesktop && !store.bridgeInstalled
         let state = disconnected ? "未接入" : store.refreshing ? "读取中" : snapshot.quotaReadFailed == true ? "待更新" : "未提供"
         let note = disconnected ? "连接后显示额度与重置时间" : "暂无重置时间"
         return HStack(spacing: 12) {
@@ -248,7 +268,14 @@ struct DashboardView: View {
                 HStack(spacing: 4) {
                     ReferenceIcon(name: "reset", size: 11)
                     Text(L10n.format("重置时间  %@", referencePreview ? ReferenceSample.reset(provider, window) : MeterFormat.reset(window.resetsAt, style: store.preferences.resetTimeStyle, now: store.displayNow)))
+                        .lineLimit(1).minimumScaleFactor(0.85)
                     Spacer(minLength: 0)
+                    if !referencePreview, provider == .claude, store.snapshot(provider).quotaSource == .claudeDesktop, !expired {
+                        Text(store.preferences.quotaDisplay == .remaining
+                            ? L10n.format("已用 %@%%", String(Int(max(0, min(100, window.usedPercent)).rounded())))
+                            : L10n.format("剩余 %@%%", String(remaining)))
+                            .monospacedDigit().fixedSize()
+                    }
                     if referencePreview, provider == .codex, window.title == "每周" {
                         ReferenceIcon(name: "counter", size: 11)
                         Text("2")
@@ -296,7 +323,7 @@ struct DashboardView: View {
                     VStack(alignment: .trailing, spacing: 6) {
                         if let cost = today?.estimatedCostUSD {
                             Text(MeterFormat.cost(cost)).font(.system(size: 20, weight: .regular, design: .rounded)).monospacedDigit().frame(height: 20)
-                            Text(L10n.text(!referencePreview && store.selected == .codex ? "参考费用" : "费用")).font(.system(size: 12, weight: .light)).foregroundStyle(ReferenceStyle.caption).frame(height: 18)
+                            Text(L10n.text(!referencePreview && (store.selected == .codex || store.selected == .claude) ? "参考费用" : "费用")).font(.system(size: 12, weight: .light)).foregroundStyle(ReferenceStyle.caption).frame(height: 18)
                         } else {
                             Text("—").font(.system(size: 20, weight: .regular, design: .rounded)).frame(height: 20)
                             Text(L10n.text("费用未提供")).font(.system(size: 12, weight: .light)).foregroundStyle(ReferenceStyle.caption).frame(height: 18)
@@ -361,6 +388,11 @@ struct DashboardView: View {
                 }
                 if let today, !today.unpricedModels.isEmpty {
                     Text(L10n.text("部分模型或计价档位未知，费用未汇总")).font(.system(size: 11, weight: .light)).foregroundStyle(ReferenceStyle.caption)
+                }
+                if store.selected == .claude, !referencePreview {
+                    Text(L10n.text("仅统计本机 Code / Cowork 日志；普通聊天 Token 未提供"))
+                        .font(.system(size: 10, weight: .light)).foregroundStyle(ReferenceStyle.caption)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if store.selected == .codex, store.current.historyIncomplete == true, !referencePreview {
                     Text(L10n.text("部分日志未读完整，以上为已读取的用量")).font(.system(size: 11, weight: .light)).foregroundStyle(ReferenceStyle.caption)

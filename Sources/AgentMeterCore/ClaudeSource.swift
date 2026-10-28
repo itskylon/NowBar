@@ -22,15 +22,19 @@ public enum ClaudeSource {
         if windows.isEmpty { messages.append("当前状态栏未提供订阅额度；需使用支持额度输出的 Claude Code 版本和订阅账号。") }
         if now.timeIntervalSince(updated) > 600 { messages.append("额度为上次 Claude Code 会话快照，等待会话更新。") }
         if windows.contains(where: { $0.expired(at: now) }) { messages.append("部分额度窗口已过期，等待 Claude Code 刷新。") }
-        return .init(provider: .claude, windows: windows, updatedAt: updated,
+        var snapshot = ProviderSnapshot(provider: .claude, windows: windows, updatedAt: updated,
                      sourceNote: "Claude Code 官方状态栏快照；仅在会话活动时更新。",
                      message: messages.isEmpty ? nil : messages.joined(separator: " "))
+        snapshot.quotaSource = .claudeCode
+        return snapshot
     }
 
     public static func load(home: URL = FileManager.default.homeDirectoryForCurrentUser) throws -> ProviderSnapshot {
         let bridge = home.appendingPathComponent("Library/Application Support/AgentMeter/claude-usage.json")
         var snapshot: ProviderSnapshot
-        if FileManager.default.fileExists(atPath: bridge.path) {
+        if ClaudeDesktopSource.isPresent(home: home) {
+            snapshot = ClaudeDesktopSource.load(home: home)
+        } else if FileManager.default.fileExists(atPath: bridge.path) {
             do { snapshot = try parseBridge(Data(contentsOf: bridge)) }
             catch {
                 snapshot = .init(provider: .claude, message: SourceError.invalidBridge.localizedDescription)
@@ -39,10 +43,13 @@ public enum ClaudeSource {
         } else {
             snapshot = .init(provider: .claude, message: "在设置中接入 Claude Code，首个回复后显示订阅额度。")
         }
+        if snapshot.quotaSource == nil { snapshot.quotaSource = .claudeCode }
         snapshot.quotaMessage = snapshot.message
-        let logs = scanLogs(home.appendingPathComponent(".claude/projects"))
+        let roots = [home.appendingPathComponent(".claude/projects")] + ClaudeDesktopProjects.roots(home: home)
+        let logs = scanLogs(roots)
         snapshot.days = logs.days
-        snapshot.sourceNote = "Token：本机 Claude Code 日志 · 本地日期；参考费用按标准 API 单价，非订阅账单，未知缓存 TTL 按 5 分钟估算。"
+        let historyNote = "Token：本机 Claude Code / Cowork 日志 · 本地日期；普通聊天 Token 未提供，参考费用非订阅账单。"
+        snapshot.sourceNote = snapshot.quotaSource == .claudeDesktop ? snapshot.sourceNote + " " + historyNote : historyNote
         if logs.incomplete {
             snapshot.historyReadFailed = true
             snapshot.message = [snapshot.message, "部分日志无法读取、过大或格式损坏，统计可能不完整。"].compactMap { $0 }.joined(separator: " ")
@@ -71,88 +78,90 @@ public enum ClaudeSource {
         return Int64(n)
     }
 
-    private static func scanLogs(_ root: URL) -> (days: [DayUsage], incomplete: Bool) {
-        guard FileManager.default.fileExists(atPath: root.path) else { return ([], false) }
+    private static func scanLogs(_ roots: [URL]) -> (days: [DayUsage], incomplete: Bool) {
         let calendar = Calendar.current
         let start = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: Date()))!
         let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: Date()))!
-        let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
-        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { return ([], true) }
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey]
         var entries: [String: Entry] = [:]
         var incomplete = false
         var bytesRead = 0
-        for case let file as URL in enumerator {
-            guard file.pathExtension == "jsonl" else { continue }
-            guard let values = try? file.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
-            if let modified = values.contentModificationDate, modified < start { continue }
-            if bytesRead >= 256 * 1024 * 1024 { incomplete = true; break }
-            guard let handle = try? FileHandle(forReadingFrom: file) else { incomplete = true; continue }
-            defer { try? handle.close() }
-            var buffer = Data()
-            var lineNumber = 0
-            var fileRead = 0
-            var discardingOversizedLine = false
-            // Long-running sessions may be huge. Read their newest 64 MiB so
-            // current activity remains visible; explicitly mark partial totals.
-            if let size = values.fileSize, size > 64 * 1024 * 1024 {
-                do {
-                    try handle.seek(toOffset: UInt64(size - 64 * 1024 * 1024))
-                    discardingOversizedLine = true
-                    incomplete = true
-                } catch { incomplete = true; continue }
-            }
-            func consume(_ line: Data) {
-                lineNumber += 1
-                guard !line.isEmpty else { return }
-                // Avoid deserializing conversation records that contain no usage.
-                guard line.range(of: Data("\"usage\"".utf8)) != nil else { return }
-                guard let obj = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { incomplete = true; return }
-                guard obj["type"] as? String == "assistant", let message = obj["message"] as? [String: Any],
-                      let usage = message["usage"] as? [String: Any],
-                      let stamp = obj["timestamp"] as? String, let date = MeterDate.parse(stamp), date >= start, date < end else { return }
-                let model = message["model"] as? String ?? "未知模型"
-                guard model != "<synthetic>" else { return }
-                let creation = usage["cache_creation"] as? [String: Any] ?? [:]
-                let write1h = count(creation["ephemeral_1h_input_tokens"])
-                let write5m = count(creation["ephemeral_5m_input_tokens"])
-                let hasTTLDetails = number(creation["ephemeral_1h_input_tokens"]) != nil
-                    || number(creation["ephemeral_5m_input_tokens"]) != nil
-                let totalWrite = max(count(usage["cache_creation_input_tokens"]), write1h + write5m)
-                let tokens = TokenCounts(input: count(usage["input_tokens"]), output: count(usage["output_tokens"]),
-                                         cacheRead: count(usage["cache_read_input_tokens"]), cacheWrite: totalWrite)
-                let session = obj["sessionId"] as? String ?? file.deletingPathExtension().lastPathComponent
-                let identity = message["id"] as? String ?? obj["requestId"] as? String ?? obj["uuid"] as? String ?? "\(file.path)#\(lineNumber)"
-                let key = session + ":" + identity
-                var entry = Entry(day: MeterDate.day(date), model: model, tokens: tokens,
-                                  write1h: write1h, ttlUpdatedAt: hasTTLDetails ? date : nil)
-                if let old = entries[key] {
-                    entry.tokens = .init(input: max(old.tokens.input, tokens.input), output: max(old.tokens.output, tokens.output),
-                                         cacheRead: max(old.tokens.cacheRead, tokens.cacheRead), cacheWrite: max(old.tokens.cacheWrite, tokens.cacheWrite))
-                    if let oldDate = old.ttlUpdatedAt,
-                       entry.ttlUpdatedAt == nil || oldDate > entry.ttlUpdatedAt! {
-                        entry.write1h = old.write1h
-                        entry.ttlUpdatedAt = oldDate
+        for root in Set(roots).sorted(by: { $0.path < $1.path }) {
+            guard FileManager.default.fileExists(atPath: root.path) else { continue }
+            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { incomplete = true; continue }
+            for case let file as URL in enumerator {
+                guard file.pathExtension == "jsonl" else { continue }
+                guard let values = try? file.resourceValues(forKeys: Set(keys)), values.isRegularFile == true, values.isSymbolicLink != true else { continue }
+                if let modified = values.contentModificationDate, modified < start { continue }
+                if bytesRead >= 256 * 1024 * 1024 { incomplete = true; break }
+                guard let handle = try? FileHandle(forReadingFrom: file) else { incomplete = true; continue }
+                defer { try? handle.close() }
+                var buffer = Data()
+                var lineNumber = 0
+                var fileRead = 0
+                var discardingOversizedLine = false
+                // Long-running sessions may be huge. Read their newest 64 MiB so
+                // current activity remains visible; explicitly mark partial totals.
+                if let size = values.fileSize, size > 64 * 1024 * 1024 {
+                    do {
+                        try handle.seek(toOffset: UInt64(size - 64 * 1024 * 1024))
+                        discardingOversizedLine = true
+                        incomplete = true
+                    } catch { incomplete = true; continue }
+                }
+                func consume(_ line: Data) {
+                    lineNumber += 1
+                    guard !line.isEmpty else { return }
+                    // Avoid deserializing conversation records that contain no usage.
+                    guard line.range(of: Data("\"usage\"".utf8)) != nil else { return }
+                    guard let obj = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { incomplete = true; return }
+                    guard obj["type"] as? String == "assistant", let message = obj["message"] as? [String: Any],
+                          let usage = message["usage"] as? [String: Any],
+                          let stamp = obj["timestamp"] as? String, let date = MeterDate.parse(stamp), date >= start, date < end else { return }
+                    let model = message["model"] as? String ?? "未知模型"
+                    guard model != "<synthetic>" else { return }
+                    let creation = usage["cache_creation"] as? [String: Any] ?? [:]
+                    let write1h = count(creation["ephemeral_1h_input_tokens"])
+                    let write5m = count(creation["ephemeral_5m_input_tokens"])
+                    let hasTTLDetails = number(creation["ephemeral_1h_input_tokens"]) != nil
+                        || number(creation["ephemeral_5m_input_tokens"]) != nil
+                    let totalWrite = max(count(usage["cache_creation_input_tokens"]), write1h + write5m)
+                    let tokens = TokenCounts(input: count(usage["input_tokens"]), output: count(usage["output_tokens"]),
+                                             cacheRead: count(usage["cache_read_input_tokens"]), cacheWrite: totalWrite)
+                    let session = obj["sessionId"] as? String ?? obj["session_id"] as? String ?? file.deletingPathExtension().lastPathComponent
+                    let identity = message["id"] as? String ?? obj["requestId"] as? String ?? obj["request_id"] as? String ?? obj["uuid"] as? String ?? "\(file.path)#\(lineNumber)"
+                    let key = session + ":" + identity
+                    var entry = Entry(day: MeterDate.day(date), model: model, tokens: tokens,
+                                      write1h: write1h, ttlUpdatedAt: hasTTLDetails ? date : nil)
+                    if let old = entries[key] {
+                        entry.tokens = .init(input: max(old.tokens.input, tokens.input), output: max(old.tokens.output, tokens.output),
+                                             cacheRead: max(old.tokens.cacheRead, tokens.cacheRead), cacheWrite: max(old.tokens.cacheWrite, tokens.cacheWrite))
+                        if let oldDate = old.ttlUpdatedAt,
+                           entry.ttlUpdatedAt == nil || oldDate > entry.ttlUpdatedAt! {
+                            entry.write1h = old.write1h
+                            entry.ttlUpdatedAt = oldDate
+                        }
+                        entry.write1h = min(entry.tokens.cacheWrite, entry.write1h)
+                        entry.day = old.day
                     }
-                    entry.write1h = min(entry.tokens.cacheWrite, entry.write1h)
-                    entry.day = old.day
+                    entries[key] = entry
                 }
-                entries[key] = entry
-            }
-            while true {
-                guard let chunk = try? handle.read(upToCount: 65536) else { incomplete = true; break }
-                if chunk.isEmpty { break }
-                fileRead += chunk.count; bytesRead += chunk.count
-                if fileRead > 64 * 1024 * 1024 || bytesRead > 256 * 1024 * 1024 { incomplete = true; break }
-                buffer.append(chunk)
-                while let newline = buffer.firstIndex(of: 10) {
-                    let line = buffer[..<newline]
-                    if !discardingOversizedLine { consume(Data(line)) }
-                    buffer.removeSubrange(...newline)
-                    discardingOversizedLine = false
+                while true {
+                    guard let chunk = try? handle.read(upToCount: 65536) else { incomplete = true; break }
+                    if chunk.isEmpty { break }
+                    fileRead += chunk.count; bytesRead += chunk.count
+                    if fileRead > 64 * 1024 * 1024 || bytesRead > 256 * 1024 * 1024 { incomplete = true; break }
+                    buffer.append(chunk)
+                    while let newline = buffer.firstIndex(of: 10) {
+                        let line = buffer[..<newline]
+                        if !discardingOversizedLine { consume(Data(line)) }
+                        buffer.removeSubrange(...newline)
+                        discardingOversizedLine = false
+                    }
+                    if buffer.count > 4 * 1024 * 1024 { buffer.removeAll(keepingCapacity: true); discardingOversizedLine = true; incomplete = true }
                 }
-                if buffer.count > 4 * 1024 * 1024 { buffer.removeAll(keepingCapacity: true); discardingOversizedLine = true; incomplete = true }
+                if !buffer.isEmpty && !discardingOversizedLine { consume(buffer) }
             }
-            if !buffer.isEmpty && !discardingOversizedLine { consume(buffer) }
         }
         let byDay = Dictionary(grouping: entries.values, by: \.day)
         let days = byDay.map { day, rows -> DayUsage in

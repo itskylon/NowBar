@@ -6,7 +6,7 @@ public enum ProviderID: String, Codable, CaseIterable, Identifiable, Sendable {
     public var title: String {
         switch self { case .codex: "Codex"; case .claude: "Claude"; case .grokBot: "Grok Bot" }
     }
-    public var usageTitle: String { self == .claude ? "Claude Code" : title }
+    public var usageTitle: String { self == .claude ? "Claude Code / Cowork" : title }
     public var iconName: String { self == .grokBot ? "grok" : rawValue }
     public var menuAbbreviation: String {
         switch self { case .codex: "C"; case .claude: "A"; case .grokBot: "G" }
@@ -73,6 +73,10 @@ public enum TokenHistorySource: String, Codable, Sendable {
     case codexAccount, codexLocal
 }
 
+public enum QuotaSource: String, Codable, Sendable {
+    case claudeDesktop, claudeCode
+}
+
 public struct ProviderSnapshot: Codable, Sendable {
     public var provider: ProviderID
     public var plan: String?
@@ -83,6 +87,9 @@ public struct ProviderSnapshot: Codable, Sendable {
     public var message: String?
     public var quotaReadFailed: Bool?
     public var quotaMessage: String?
+    public var quotaSource: QuotaSource?
+    public var quotaAccountID: String?
+    public var quotaFromCache: Bool?
     public var historyReadFailed: Bool?
     public var historySource: TokenHistorySource?
     public var historyUpdatedAt: Date?
@@ -98,10 +105,14 @@ public enum SnapshotMerge {
     public static func preservingFailures(_ fresh: ProviderSnapshot, previous: ProviderSnapshot?) -> ProviderSnapshot {
         guard let previous, previous.provider == fresh.provider else { return fresh }
         var result = fresh
-        if fresh.quotaReadFailed == true, !previous.windows.isEmpty {
+        let sameQuotaAccount = fresh.quotaSource == .claudeDesktop || previous.quotaSource == .claudeDesktop
+            ? fresh.quotaSource == previous.quotaSource && fresh.quotaAccountID != nil
+                && fresh.quotaAccountID == previous.quotaAccountID : true
+        if fresh.quotaReadFailed == true, sameQuotaAccount, !previous.windows.isEmpty {
             result.windows = previous.windows
             result.updatedAt = previous.updatedAt
             result.plan = previous.plan
+            result.quotaFromCache = previous.quotaFromCache
         }
         let sameHistory = fresh.historySource == previous.historySource
         if fresh.historyReadFailed == true, sameHistory, !previous.days.isEmpty {

@@ -10,7 +10,7 @@ final class MeterStore: ObservableObject {
     @Published var selected: ProviderID = .codex {
         didSet { if !demo && !preview { UserDefaults.standard.set(selected.rawValue, forKey: "selectedProvider") } }
     }
-    @Published var pins: Set<String> = ["codex:primary", "codex:secondary"]
+    @Published var pins: Set<String> = ["codex:primary"]
     @Published var bridgeBusy = false
     @Published var bridgeInstalled = false
     @Published var bridgeMessage: String?
@@ -92,27 +92,50 @@ final class MeterStore: ObservableObject {
         let calendar = Calendar.current
         return (0..<7).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: displayNow) }.map { MeterDate.day($0, calendar: calendar) }
     }
-    var menuLabel: String {
-        let pieces = providers.flatMap { provider in
-            snapshot(provider).windows.filter { pins.contains("\(provider.rawValue):\($0.id)") }.map { window in
-                let amount = window.expired(at: displayNow) ? L10n.text("待更新") : "\(Int(quotaPercent(window).rounded()))%"
-                let label = L10n.text(window.title == "每周" ? "周" : window.title)
-                return "\(provider.menuAbbreviation) \(label) \(amount)"
-            }
+    var menuQuotas: [(provider: ProviderID, window: LimitWindow?)] {
+        let entries: [(provider: ProviderID, window: LimitWindow?)] = preferences.menuBar.orderedProviders.compactMap { provider in
+            guard providers.contains(provider), isMenuVisible(provider) else { return nil }
+            return (provider, menuWindow(provider))
         }
-        return pieces.joined(separator: "  ")
+        if preferences.menuBar.displayScope == .selected {
+            return entries.first(where: { $0.provider == selected }).map { [$0] } ?? Array(entries.prefix(1))
+        }
+        return entries
     }
-    func isPinned(_ provider: ProviderID, _ window: LimitWindow) -> Bool { pins.contains("\(provider.rawValue):\(window.id)") }
+    private func menuWindow(_ provider: ProviderID) -> LimitWindow? {
+        let snapshot = snapshot(provider)
+        if pins.contains("\(provider.rawValue):menu.auto") {
+            return snapshot.windows.first { $0.usedPercent.isFinite && !$0.expired(at: displayNow) } ?? snapshot.windows.first
+        }
+        return snapshot.windows.first { pins.contains("\(provider.rawValue):\($0.id)") }
+    }
+    func isMenuVisible(_ provider: ProviderID) -> Bool {
+        pins.contains { $0.hasPrefix(provider.rawValue + ":") }
+    }
+    func setMenuVisible(_ provider: ProviderID, visible: Bool) {
+        guard visible != isMenuVisible(provider) else { return }
+        if visible { pins.insert("\(provider.rawValue):menu.auto") }
+        else { pins = Set(pins.filter { !$0.hasPrefix(provider.rawValue + ":") }) }
+        if !demo && !preview { UserDefaults.standard.set(Array(pins).sorted(), forKey: "pinnedWindows") }
+    }
+    func menuQuotaValue(_ window: LimitWindow?) -> String {
+        guard let window, window.usedPercent.isFinite, !window.expired(at: displayNow) else { return "—" }
+        return "\(Int(min(100, max(0, quotaPercent(window))).rounded()))%"
+    }
+    var menuLabel: String {
+        menuQuotas.map { provider, window in
+            let title = window.map { L10n.text($0.title == "每周" ? "周" : $0.title) } ?? L10n.text("未提供")
+            return "\(provider.menuAbbreviation) \(title) \(menuQuotaValue(window))"
+        }.joined(separator: "  ")
+    }
+    func isPinned(_ provider: ProviderID, _ window: LimitWindow) -> Bool {
+        menuWindow(provider)?.id == window.id
+    }
     func togglePin(_ provider: ProviderID, _ window: LimitWindow) {
         let key = "\(provider.rawValue):\(window.id)"
-        if pins.contains(key) { pins.remove(key) }
-        else {
-            // The menu bar fits two rows. A newly selected quota must be visible.
-            let available = Set(providers.flatMap { id in snapshot(id).windows.map { "\(id.rawValue):\($0.id)" } })
-            pins.formIntersection(available)
-            while pins.count >= 2, let displaced = pins.sorted().first { pins.remove(displaced) }
-            pins.insert(key)
-        }
+        let wasSelected = isPinned(provider, window)
+        pins = Set(pins.filter { !$0.hasPrefix(provider.rawValue + ":") })
+        if !wasSelected { pins.insert(key) }
         if !demo && !preview { UserDefaults.standard.set(Array(pins).sorted(), forKey: "pinnedWindows") }
     }
 

@@ -75,6 +75,39 @@ struct StoreAcceptance {
         local.days = [.init(day: MeterDate.day(), totalTokens: 210)]
         store.updateCodexLocalUsage(local)
         expect(store.snapshot(.codex).message == missingQuota.quotaMessage, "Local ticks must retain successful-but-unavailable quota explanations")
+        let menuStore = MeterStore(previewSnapshots: [
+            .init(provider: .codex, windows: [window]),
+            .init(provider: .claude, windows: [.init(id: "claude.five_hour", title: "5 小时", usedPercent: 24, resetsAt: nil)]),
+            .init(provider: .grokBot, windows: [.init(id: "grokBot.weekly", title: "每周", usedPercent: 0, resetsAt: nil)])
+        ])
+        menuStore.pins = ["codex:primary", "grokBot:grokBot.weekly"]
+        menuStore.togglePin(.claude, menuStore.snapshot(.claude).windows[0])
+        expect(menuStore.pins.count == 3 && menuStore.pins.contains("codex:primary") && menuStore.pins.contains("grokBot:grokBot.weekly"),
+               "Pinning a third service must not evict either existing service")
+        expect(menuStore.menuLabel.contains("C ") && menuStore.menuLabel.contains("A ") && menuStore.menuLabel.contains("G "),
+               "The menu summary must include every pinned service")
+        menuStore.setProvider(.claude, enabled: false)
+        expect(!menuStore.menuLabel.contains("A ") && menuStore.pins.count == 3, "Disabling a service hides its summary without losing its pin")
+        menuStore.setProvider(.claude, enabled: true)
+        expect(menuStore.menuLabel.contains("A "), "Re-enabling a service restores its menu quota")
+        let otherWindow = LimitWindow(id: "secondary", title: "5 小时", usedPercent: 40, resetsAt: nil)
+        menuStore.snapshots[0].windows.append(otherWindow)
+        menuStore.togglePin(.codex, otherWindow)
+        expect(!menuStore.pins.contains("codex:primary") && menuStore.pins.contains("codex:secondary") && menuStore.pins.count == 3,
+               "Selecting another window replaces only that service's menu quota")
+        expect(menuStore.menuQuotas.count == 3 && menuStore.menuQuotas.first?.window?.id == "secondary",
+               "The single-line summary contains one chosen window per provider")
+        menuStore.snapshots[0].windows = []
+        expect(menuStore.menuQuotas.count == 3 && menuStore.menuQuotaValue(menuStore.menuQuotas[0].window) == "—",
+               "A selected provider with unavailable data remains visible as a dash")
+        let invalid = LimitWindow(id: "invalid", title: "每周", usedPercent: .nan, resetsAt: nil)
+        expect(menuStore.menuQuotaValue(invalid) == "—", "Nonfinite percentages must not crash or invent a quota")
+        let expired = LimitWindow(id: "expired", title: "每周", usedPercent: 10, resetsAt: .distantPast)
+        expect(menuStore.menuQuotaValue(expired) == "—", "Expired quota is unavailable until refreshed")
+        menuStore.snapshots[0].windows = [window, otherWindow]
+        menuStore.pins.insert("codex:primary")
+        expect(menuStore.menuQuotas.count == 3 && menuStore.isPinned(.codex, window) && !menuStore.isPinned(.codex, otherWindow),
+               "Legacy multiple pins resolve to one visible choice and one selected eye")
         print("Store: \(checks) acceptance checks passed without preferences, network or system writes")
     }
 }

@@ -16,15 +16,24 @@ struct ClaudeHistoryReadLimits {
 
 /// Incremental local usage metadata. Conversation text is never retained between scans.
 public final class ClaudeUsageHistoryReader: @unchecked Sendable {
-    private let root: URL
+    private var roots: [URL]
     private let limits: ClaudeHistoryReadLimits
     private let lock = NSLock()
     private var files: [String: FileState] = [:]
 
-    public convenience init(root: URL) { self.init(root: root, limits: .init()) }
-    init(root: URL, limits: ClaudeHistoryReadLimits) {
-        self.root = root
+    public convenience init(root: URL) { self.init(roots: [root], limits: .init()) }
+    public convenience init(roots: [URL]) { self.init(roots: roots, limits: .init()) }
+    convenience init(root: URL, limits: ClaudeHistoryReadLimits) { self.init(roots: [root], limits: limits) }
+    init(roots: [URL], limits: ClaudeHistoryReadLimits) {
+        self.roots = Array(Set(roots.map(\.standardizedFileURL))).sorted { $0.path < $1.path }
         self.limits = limits
+    }
+
+    /// Reconfigure discovered session roots while retaining incremental state for existing files.
+    public func updateRoots(_ roots: [URL]) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.roots = Array(Set(roots.map(\.standardizedFileURL))).sorted { $0.path < $1.path }
     }
 
     private struct Candidate {
@@ -122,22 +131,29 @@ public final class ClaudeUsageHistoryReader: @unchecked Sendable {
 
     private func discover(incomplete: inout Bool) -> [Candidate] {
         let manager = FileManager.default
-        guard manager.fileExists(atPath: root.path) else { return [] }
-        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey]
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey]
         var failed = false
-        guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles], errorHandler: { _, _ in failed = true; return true }) else {
-            incomplete = true; return []
-        }
         var candidates: [Candidate] = []
-        for case let url as URL in enumerator {
-            guard url.pathExtension == "jsonl" else { continue }
-            guard let metadata = try? url.resourceValues(forKeys: keys) else { failed = true; continue }
-            guard metadata.isRegularFile == true, metadata.isSymbolicLink != true else { continue }
-            guard let size = metadata.fileSize, size >= 0 else { failed = true; continue }
-            let attributes = try? manager.attributesOfItem(atPath: url.path)
-            let identity = (attributes?[.systemFileNumber] as? NSNumber)?.stringValue ?? url.path
-            candidates.append(.init(url: url, size: UInt64(size), modified: metadata.contentModificationDate, identity: identity))
+        var paths: Set<String> = []
+        for root in roots {
+            guard manager.fileExists(atPath: root.path) else { continue }
+            guard let metadata = try? root.resourceValues(forKeys: keys),
+                  metadata.isDirectory == true, metadata.isSymbolicLink != true else { continue }
+            guard let enumerator = manager.enumerator(at: root, includingPropertiesForKeys: Array(keys),
+                options: [.skipsHiddenFiles], errorHandler: { _, _ in failed = true; return true }) else {
+                failed = true; continue
+            }
+            for case let url as URL in enumerator {
+                guard let metadata = try? url.resourceValues(forKeys: keys) else { failed = true; continue }
+                if metadata.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+                guard url.pathExtension == "jsonl", metadata.isRegularFile == true else { continue }
+                let url = url.standardizedFileURL
+                guard paths.insert(url.path).inserted else { continue }
+                guard let size = metadata.fileSize, size >= 0 else { failed = true; continue }
+                let attributes = try? manager.attributesOfItem(atPath: url.path)
+                let identity = (attributes?[.systemFileNumber] as? NSNumber)?.stringValue ?? url.path
+                candidates.append(.init(url: url, size: UInt64(size), modified: metadata.contentModificationDate, identity: identity))
+            }
         }
         incomplete = incomplete || failed
         return candidates.sorted {
@@ -217,11 +233,12 @@ public final class ClaudeUsageHistoryReader: @unchecked Sendable {
               let oneHour = count(creation["ephemeral_1h_input_tokens"]),
               let fiveMinute = count(creation["ephemeral_5m_input_tokens"]) else { state.malformed = true; return }
         let tokens = TokenCounts(input: input, output: output, cacheRead: read, cacheWrite: max(write, oneHour + fiveMinute))
-        let conversation = nonempty(object["sessionId"]) ?? file.path
+        let conversation = nonempty(object["sessionId"]) ?? nonempty(object["session_id"]) ?? file.path
         let fileAgent = file.deletingLastPathComponent().lastPathComponent == "subagents" ? file.deletingPathExtension().lastPathComponent : nil
         let agent = nonempty(object["agentId"]) ?? fileAgent
         let session = agent.map { conversation + ":agent:" + $0 } ?? conversation
-        let identity = nonempty(message["id"]) ?? nonempty(object["requestId"]) ?? nonempty(object["uuid"]) ?? "\(file.path)#\(offset)"
+        let identity = nonempty(message["id"]) ?? nonempty(object["requestId"]) ?? nonempty(object["request_id"])
+            ?? nonempty(object["uuid"]) ?? "\(file.path)#\(offset)"
         let ttlKnown = creation["ephemeral_1h_input_tokens"] != nil || creation["ephemeral_5m_input_tokens"] != nil
         let cwd = nonempty(object["cwd"]).flatMap { $0.hasPrefix("/") ? $0 : nil }
         state.entries.append(.init(id: "claude:\(session):\(identity)", date: date, model: model,

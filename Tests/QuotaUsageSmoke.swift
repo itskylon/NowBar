@@ -44,6 +44,11 @@ struct QuotaUsageSmoke {
         let missingClaude = ProviderSnapshot(provider: .claude)
         check(rows(missingClaude, bridge: false).allSatisfy { $0.state == .disconnected }, "Claude missing bridge is explicit")
         check(rows(missingClaude, bridge: true).allSatisfy { $0.state == .unavailable }, "Installed bridge does not invent quota")
+        var desktopClaude = missingClaude
+        desktopClaude.quotaSource = .claudeDesktop
+        desktopClaude.updatedAt = now
+        check(rows(desktopClaude, bridge: false).allSatisfy { $0.state == .unavailable }, "Connected desktop accounts do not require a Code bridge")
+        check(rows(desktopClaude, bridge: false, refreshing: true).allSatisfy { $0.state == .loading }, "Desktop missing quota can refresh independently of bridge")
         var claude = ProviderSnapshot(provider: .claude, windows: [week], updatedAt: now)
         check(rows(claude, bridge: false)[0].state == .current, "Valid Claude data takes priority over bridge installation flag")
         claude.updatedAt = now.addingTimeInterval(-601)

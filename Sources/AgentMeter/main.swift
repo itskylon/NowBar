@@ -109,31 +109,18 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         store?.updates.checkAutomaticallyIfDue()
     }
 
-    private func providerImage(_ provider: ProviderID) -> NSImage? {
-        let image = Bundle.main.url(forResource: provider.iconName, withExtension: "svg", subdirectory: "providers")
-            .flatMap { NSImage(contentsOf: $0) }
-            ?? NSImage(systemSymbolName: "chart.bar.xaxis", accessibilityDescription: provider.title)
-        image?.isTemplate = true
-        return image
-    }
-
     private func updateStatusLabel() {
         panel.title = L10n.format("%@ 用量", AppBrand.name)
         usageWindow?.title = AppBrand.name
-        statusItem.button?.toolTip = AppBrand.name + " · " + L10n.text("AI 用量")
-        let entries = store.providers.flatMap { provider in
-            store.snapshot(provider).windows.filter { store.isPinned(provider, $0) }.map { (provider, $0) }
-        }.prefix(2)
-        let mixed = Set(entries.map { $0.0 }).count > 1
-        let rows = entries.map { provider, window in
-            (title: (mixed ? provider.title + " " + L10n.text(window.title) : L10n.text(window.title)) + (store.preferences.quotaDisplay == .used ? " " + L10n.text("已用") : ""),
-             value: window.expired(at: store.displayNow) ? L10n.text("待更新") : "\(Int(store.quotaPercent(window).rounded()))%")
-        }
-        statusItem.length = summary.update(mark: providerImage(entries.first?.0 ?? .codex), rows: rows)
+        let entries = MenuBarPresentation.entries(for: store)
+        statusItem.button?.toolTip = entries.isEmpty ? AppBrand.name + " · " + L10n.text("AI 用量") : entries.map(\.toolTip).joined(separator: "\n\n")
+        statusItem.length = summary.update(entries: entries, fallback: NSImage(systemSymbolName: "chart.bar.xaxis", accessibilityDescription: AppBrand.name),
+                                          appearance: MenuBarPresentation.appearance(store.preferences.menuBar))
         summary.frame.origin.y = max(0, ((statusItem.button?.bounds.height ?? 22) - 22) / 2)
-        let accessibleSummary = (rows.map { $0.title + " " + $0.value }).joined(separator: "; ")
+        let accessibleSummary = entries.map(\.toolTip).joined(separator: "; ")
         statusItem.button?.setAccessibilityLabel(AppBrand.name + (accessibleSummary.isEmpty ? "" : ": " + accessibleSummary))
         statusItem.button?.setAccessibilityIdentifier("AgentMeterStatusItem")
+        if panel.isVisible { positionPanel() }
         updateApplicationMenu()
     }
 
@@ -153,6 +140,8 @@ final class MeterAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             let menu = shortcuts.build(version: store.updates.currentVersion, checking: store.updates.checking, refreshing: store.refreshing)
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY - 3), in: button)
         } else {
+            if let event, let entry = summary.entry(at: summary.convert(event.locationInWindow, from: nil)),
+               let provider = ProviderID(rawValue: entry.id) { store.selected = provider }
             togglePanel()
         }
     }
@@ -329,8 +318,8 @@ func renderPreview(path: String, dark: Bool) throws {
     let content: AnyView
     switch surface {
     case "settings":
-        measured = NSSize(width: 470, height: 640)
-        content = AnyView(MeterSettingsView(store: store, tab: .constant(0)))
+        measured = NSSize(width: 900, height: 880)
+        content = AnyView(UsageHistoryView(store: store, showSettings: true, previewRecords: []))
     case "history", "quota":
         measured = NSSize(width: 900, height: 880)
         content = AnyView(UsageHistoryView(store: store, showQuota: surface == "quota", previewRecords: []))

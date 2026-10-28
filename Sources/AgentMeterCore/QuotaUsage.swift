@@ -45,7 +45,7 @@ public enum QuotaUsage {
                     state = .saved
                 } else { state = .current }
             } else if snapshot.quotaReadFailed == true { state = .failed }
-            else if snapshot.provider == .claude && !bridgeInstalled { state = .disconnected }
+            else if snapshot.provider == .claude && snapshot.quotaSource != .claudeDesktop && !bridgeInstalled { state = .disconnected }
             else if refreshing { state = .loading }
             else { state = .unavailable }
             return .init(id: window?.id ?? "\(snapshot.provider.rawValue).missing.\(title)", title: title, window: window, state: state)

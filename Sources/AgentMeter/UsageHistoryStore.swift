@@ -39,6 +39,7 @@ final class UsageHistoryStore: ObservableObject {
     private let currentDate: () -> Date
     private let codexReader: CodexLocalUsageReader
     private let claudeReader: ClaudeUsageHistoryReader
+    private let claudeRoots: () -> [URL]
     private var timer: Timer?
     private var dayTimer: Timer?
     private var active = false
@@ -69,8 +70,12 @@ final class UsageHistoryStore: ObservableObject {
                                  cacheWriteInputTokens: counts.cacheWrite, outputTokens: counts.output,
                                  serviceTier: tier ?? "standard")
         })
-        claudeReader = ClaudeUsageHistoryReader(root: claudeProjects ?? FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects", isDirectory: true))
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        claudeRoots = {
+            if let claudeProjects { return [claudeProjects] }
+            return [home.appendingPathComponent(".claude/projects", isDirectory: true)] + ClaudeDesktopProjects.roots(home: home)
+        }
+        claudeReader = ClaudeUsageHistoryReader(roots: claudeRoots())
         if let previewRecords {
             records = previewRecords
             byProvider = Dictionary(grouping: previewRecords, by: \.provider)
@@ -209,6 +214,7 @@ final class UsageHistoryStore: ObservableObject {
         let requested = enabled
         let codex = codexReader
         let claude = claudeReader
+        let discoverClaudeRoots = claudeRoots
         let scanGeneration = generation
         scanning = true
         Task {
@@ -220,6 +226,7 @@ final class UsageHistoryStore: ObservableObject {
                                          scanned: result.scannedFileCount, total: result.totalFileCount, readBytes: result.readBytes))
                 }
                 if requested.contains(.claude), await self?.mayRead(.claude, generation: scanGeneration) == true {
+                    claude.updateRoots(discoverClaudeRoots())
                     let result = claude.scan()
                     batches.append(.init(provider: .claude, records: result.records, incomplete: result.incomplete,
                                          scanned: result.scannedFileCount, total: result.totalFileCount, readBytes: result.readBytes))

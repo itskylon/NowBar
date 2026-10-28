@@ -13,7 +13,7 @@ struct QuotaUsageView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 20) {
                 header
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "info.circle").foregroundStyle(Color.accentColor)
@@ -30,20 +30,16 @@ struct QuotaUsageView: View {
                 } else {
                     ForEach(providers) { provider in providerCard(provider) }
                 }
-                Text(L10n.format("重置时间按电脑当前时区显示：%@。刷新读取已启用服务的最新额度；Claude 快照随 Claude Code 会话活动更新。", TimeZone.current.identifier))
+                Text(L10n.format("重置时间按电脑当前时区显示：%@。刷新读取已启用服务的额度；Claude 桌面缓存和 Code 桥接快照随聊天或会话更新。", TimeZone.current.identifier))
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(maxWidth: WorkspaceStyle.contentWidth, alignment: .leading)
+                .padding(28).frame(maxWidth: .infinity)
         }.background(Color(nsColor: .windowBackgroundColor)).environment(\.locale, L10n.locale)
     }
 
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(L10n.text("额度用量")).font(.system(size: 22, weight: .semibold))
-                Text(L10n.text("同时查看各个额度窗口的已用、剩余和重置时间。"))
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-            Spacer()
+        WorkspacePageHeader(title: L10n.text("额度用量"),
+                            subtitle: L10n.text("同时查看各个额度窗口的已用、剩余和重置时间。")) {
             Button(action: store.refresh) {
                 HStack(spacing: 5) {
                     if store.refreshing { ProgressView().controlSize(.small) }
@@ -59,7 +55,8 @@ struct QuotaUsageView: View {
         let windows = QuotaUsage.windows(for: snapshot, bridgeInstalled: store.bridgeInstalled,
                                          refreshing: store.refreshing, now: store.displayNow)
         let note = provider == .grokBot ? snapshot.quotaMessage ?? snapshot.message : snapshot.quotaMessage
-        return VStack(alignment: .leading, spacing: 18) {
+        return WorkspaceCard {
+          VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 11) {
                 ProviderMark(name: provider.iconName, size: 25, color: .primary)
                 VStack(alignment: .leading, spacing: 7) {
@@ -78,19 +75,27 @@ struct QuotaUsageView: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                if provider == .claude, !store.bridgeInstalled || snapshot.windows.isEmpty {
-                    Button(store.bridgeInstalled ? L10n.text("查看接入设置") : L10n.text("接入 Claude 额度"), action: settings)
-                        .font(.system(size: 11)).accessibilityLabel(L10n.text("打开 Claude 额度接入设置"))
+                if provider == .claude {
+                    if snapshot.quotaSource == .claudeDesktop {
+                        Link(L10n.text("查看用量"), destination: URL(string: "https://claude.ai/settings/usage")!)
+                            .font(.system(size: 11)).accessibilityLabel(L10n.text("查看 Claude 用量"))
+                    } else if !store.bridgeInstalled || snapshot.windows.isEmpty {
+                        Button(store.bridgeInstalled ? L10n.text("查看接入设置") : L10n.text("接入 Claude 额度"), action: settings)
+                            .font(.system(size: 11)).accessibilityLabel(L10n.text("打开 Claude 额度接入设置"))
+                    }
                 }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16, alignment: .top), count: min(2, windows.count)), spacing: 16) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: min(2, max(1, windows.count))), spacing: 12) {
                 ForEach(windows) { window in quotaWindow(window, provider: provider) }
             }
             if let note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Label(L10n.text(note), systemImage: "info.circle").font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if windows.contains(where: { $0.state == .saved }) {
+            if snapshot.quotaFromCache == true {
+                Label(L10n.text("随 Claude 聊天更新；重置后等待新数据。"), systemImage: "clock.arrow.circlepath")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            } else if windows.contains(where: { $0.state == .saved }) {
                 Label(L10n.text("以上保留了上次获取的额度，刷新后可确认最新数值。"), systemImage: "clock.arrow.circlepath")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
@@ -102,9 +107,8 @@ struct QuotaUsageView: View {
                 Text(L10n.text(snapshot.sourceNote)).font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }.padding(20)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.05), lineWidth: 1))
+          }
+        }
     }
 
     private func quotaWindow(_ quota: QuotaUsageWindow, provider: ProviderID) -> some View {
@@ -128,7 +132,7 @@ struct QuotaUsageView: View {
                         .accessibilityLabel("\(pinned ? L10n.text("取消固定") : L10n.text("固定到菜单栏")) \(provider.title) \(L10n.text(quota.title))")
                 }
             }.frame(minHeight: 28)
-            HStack(alignment: .firstTextBaseline, spacing: 30) {
+            HStack(alignment: .firstTextBaseline, spacing: 24) {
                 quotaMetric(L10n.text("已用"), value: quota.usedPercent, color: .primary)
                 quotaMetric(L10n.text("剩余"), value: quota.remainingPercent, color: quota.remainingPercent == nil ? .secondary : color)
                 Spacer(minLength: 0)
@@ -152,7 +156,7 @@ struct QuotaUsageView: View {
                 }
             }.fixedSize(horizontal: false, vertical: true)
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 9))
             .accessibilityElement(children: .contain)
     }
 
@@ -181,7 +185,7 @@ struct QuotaUsageView: View {
     private func source(_ provider: ProviderID) -> String {
         switch provider {
         case .codex: L10n.text("Codex 账户额度")
-        case .claude: L10n.text("Claude Code 官方状态栏快照")
+        case .claude: L10n.text(store.snapshot(provider).quotaFromCache == true ? "Claude 桌面缓存" : store.snapshot(provider).quotaSource == .claudeDesktop ? "Claude 桌面版 · 账户共享额度" : "Claude Code 官方状态栏快照")
         case .grokBot: L10n.text("Grok Bot 账户用量")
         }
     }

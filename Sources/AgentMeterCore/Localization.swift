@@ -35,7 +35,7 @@ public enum L10n {
     public static var locale: Locale { Locale(identifier: isEnglish ? "en_US" : "zh_Hans_CN") }
 
     private static let english = [CommonTranslations.english, DashboardTranslations.english,
-                                  HistoryTranslations.english, SettingsTranslations.english]
+                                  HistoryTranslations.english, SettingsTranslations.english, MenuBarTranslations.english]
         .reduce(into: [String: String]()) { result, table in result.merge(table) { first, _ in first } }
 
     private struct Template {

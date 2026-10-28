@@ -76,7 +76,7 @@ struct UsageHistoryView: View {
 
     private var historyContent: some View {
         ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 20) {
                     header
                     filters
                     summary
@@ -84,7 +84,8 @@ struct UsageHistoryView: View {
                     chartCard
                     Text(L10n.text("本机日志中的参考费用，按公开 API 单价估算，不代表订阅账单。缓存属于输入、推理属于输出，总 Token 不重复累加。"))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
-                }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(maxWidth: WorkspaceStyle.contentWidth, alignment: .leading)
+                    .padding(28).frame(maxWidth: .infinity, alignment: .top)
         }.background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -103,11 +104,11 @@ struct UsageHistoryView: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                AppBrandMark(size: 30)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 10) {
+                AppBrandMark(size: 32)
                 Text(AppBrand.name).font(.system(size: 17, weight: .semibold, design: .rounded))
-            }.padding(.horizontal, 10).padding(.bottom, 22)
+            }.padding(.horizontal, 10).padding(.bottom, 26)
             sidebarButton(L10n.text("通用与服务设置"), icon: "gearshape", selected: showingSettings) { showingSettings = true }
             sidebarButton(L10n.text("额度用量"), icon: "gauge.with.dots.needle.33percent", selected: !showingSettings && showingQuota && history.provider == nil) {
                 showingSettings = false
@@ -119,7 +120,7 @@ struct UsageHistoryView: View {
                 showingQuota = false
                 history.provider = nil
             }
-            Text(L10n.text("已启用的服务")).font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 10).padding(.top, 22)
+            Text(L10n.text("已启用的服务")).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).padding(.horizontal, 10).padding(.top, 24).padding(.bottom, 5)
             ForEach(store.providers) { provider in
                 Button { showingSettings = false; history.provider = provider } label: {
                     HStack(spacing: 8) {
@@ -129,32 +130,28 @@ struct UsageHistoryView: View {
                         if !showingQuota {
                             Circle().fill(provider.hasTokenHistory ? Color.green : Color.secondary.opacity(0.5)).frame(width: 5, height: 5)
                         }
-                    }.padding(.horizontal, 10).padding(.vertical, 8).contentShape(Rectangle())
+                    }.padding(.horizontal, 12).padding(.vertical, 10).contentShape(Rectangle())
                 }.buttonStyle(.plain).foregroundStyle(!showingSettings && history.provider == provider ? .white : .primary)
-                    .background(!showingSettings && history.provider == provider ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 6))
+                    .background(!showingSettings && history.provider == provider ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 8))
                     .accessibilityLabel(L10n.text("筛选 ") + provider.title)
             }
             Spacer()
             Text(L10n.text("仅统计这台 Mac\n跟随系统外观")).font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4).padding(10)
-        }.padding(.horizontal, 12).padding(.top, 26).padding(.bottom, 12).frame(width: 190)
+        }.padding(.horizontal, 14).padding(.top, 28).padding(.bottom, 14).frame(width: 210)
             .background(Color(nsColor: .underPageBackgroundColor))
     }
 
     private func sidebarButton(_ title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: icon).font(.system(size: 12, weight: .medium)).frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10).padding(.vertical, 9).contentShape(Rectangle())
+            Label(title, systemImage: icon).font(.system(size: 12, weight: .medium))
+                .labelStyle(.titleAndIcon).frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12).padding(.vertical, 11).contentShape(Rectangle())
         }.buttonStyle(.plain).foregroundStyle(selected ? .white : .primary)
-            .background(selected ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .background(selected ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(L10n.text("用量与支出")).font(.system(size: 22, weight: .semibold))
-                Text(L10n.text("已启用服务在本机留下的历史用量与参考费用。")).font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-            Spacer()
+        WorkspacePageHeader(title: L10n.text("用量与支出"), subtitle: L10n.text("已启用服务在本机留下的历史用量与参考费用。")) {
             Button(action: history.refresh) {
                 HStack(spacing: 5) {
                     if history.scanning { ProgressView().controlSize(.small) }
@@ -166,32 +163,47 @@ struct UsageHistoryView: View {
     }
 
     private var filters: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Picker(L10n.text("统计范围"), selection: $history.range) {
-                ForEach(UsageRange.allCases) { Text(L10n.text($0.title)).tag($0) }
-            }.id(L10n.locale.identifier).labelsHidden().accessibilityLabel(L10n.text("统计范围")).pickerStyle(.segmented).frame(maxWidth: 490)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.text("统计时区")).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                HStack(spacing: 10) {
-                    Picker(L10n.text("统计时区"), selection: $history.timeZoneID) {
-                        ForEach(timeZoneIdentifiers, id: \.self) { Text($0).tag($0) }
-                    }.id(L10n.locale.identifier).labelsHidden().frame(maxWidth: 330)
-                    Button(L10n.text("使用电脑当前时区"), action: history.useCurrentTimeZone)
+        WorkspaceCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Picker(L10n.text("统计范围"), selection: $history.range) {
+                    ForEach(UsageRange.allCases) { Text(L10n.text($0.title)).tag($0) }
+                }.id(L10n.locale.identifier).labelsHidden().accessibilityLabel(L10n.text("统计范围"))
+                    .pickerStyle(.segmented).frame(maxWidth: 490)
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.text("统计时区")).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 10) {
+                            timeZonePicker.frame(width: 260)
+                            Button(L10n.text("使用电脑当前时区"), action: history.useCurrentTimeZone)
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            timeZonePicker.frame(maxWidth: 330)
+                            Button(L10n.text("使用电脑当前时区"), action: history.useCurrentTimeZone)
+                        }
+                    }
+                    Text(L10n.text("按所选时区的日期汇总；更改时区可能让部分用量归入不同日期。"))
+                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                Text(L10n.text("按所选时区的日期汇总；更改时区可能让部分用量归入不同日期。")).font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            if history.provider == .grokBot {
-                Label(L10n.text("Grok Bot 当前只提供订阅额度，没有本机 Token 与费用历史。"), systemImage: "info.circle")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-            }
+                if history.provider == .grokBot {
+                    Label(L10n.text("Grok Bot 当前只提供订阅额度，没有本机 Token 与费用历史。"), systemImage: "info.circle")
+                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }.font(.system(size: 12))
         }
+    }
+
+    private var timeZonePicker: some View {
+        Picker(L10n.text("统计时区"), selection: $history.timeZoneID) {
+            ForEach(timeZoneIdentifiers, id: \.self) { Text($0).tag($0) }
+        }.id(L10n.locale.identifier).labelsHidden().accessibilityLabel(L10n.text("统计时区"))
     }
 
     private var summary: some View {
         let report = history.report
         let summary = report.summary
-        return VStack(alignment: .leading, spacing: 17) {
-            VStack(alignment: .leading, spacing: 5) {
+        return VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(L10n.text("USD · 本地参考费用")).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 HStack(spacing: 6) {
                     if history.scanning { ProgressView().controlSize(.mini) }
@@ -199,20 +211,14 @@ struct UsageHistoryView: View {
                     if let updated = history.lastUpdated { Text("· " + MeterFormat.updated(updated)) }
                 }.font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            HStack(alignment: .top, spacing: 42) {
-                metric(summary.unpricedCount > 0 ? L10n.text("已计价部分") : L10n.text("参考支出"), value: cost(summary.pricedCostUSD))
-                metric(L10n.text("已记录 Token"), value: report.records.isEmpty ? "—" : MeterFormat.tokens(summary.tokens.total))
-                metric(L10n.text("独立聊天"), value: String(history.conversationCount))
-                metric(L10n.text("会话"), value: String(history.sessionCount))
-                Spacer(minLength: 0)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 18) { headlineMetrics }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 2), alignment: .leading, spacing: 18) { headlineMetrics }
             }
             Divider()
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 5), alignment: .leading, spacing: 14) {
-                tokenMetric(L10n.text("普通输入"), value: summary.tokens.input)
-                tokenMetric(L10n.text("输出"), value: summary.tokens.output)
-                tokenMetric(L10n.text("缓存读取"), value: summary.tokens.cacheRead)
-                tokenMetric(L10n.text("缓存写入"), value: summary.tokens.cacheWrite)
-                tokenMetric(L10n.text("推理（已含在输出）"), value: summary.tokens.reasoning)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 16) { tokenMetrics }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), alignment: .leading, spacing: 16) { tokenMetrics }
             }
             Text(L10n.format("已计价 %@ · 未计价 %@ · 记录 %@", String(summary.pricedCount), String(summary.unpricedCount), String(summary.recordCount)))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -220,31 +226,58 @@ struct UsageHistoryView: View {
                 Label(history.hasUnreadFiles ? L10n.text("还有日志未读完，以上为已读取部分；可刷新继续检查。") : L10n.text("部分日志损坏或无法读取，统计可能不完整。"), systemImage: "info.circle")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
+        }.padding(18).historyCard()
+    }
+
+    private var headlineMetrics: some View {
+        let report = history.report
+        let summary = report.summary
+        return Group {
+            metric(summary.unpricedCount > 0 ? L10n.text("已计价部分") : L10n.text("参考支出"), value: cost(summary.pricedCostUSD))
+            metric(L10n.text("已记录 Token"), value: report.records.isEmpty ? "—" : MeterFormat.tokens(summary.tokens.total))
+            metric(L10n.text("独立聊天"), value: String(history.conversationCount))
+            metric(L10n.text("会话"), value: String(history.sessionCount))
+        }
+    }
+
+    private var tokenMetrics: some View {
+        let tokens = history.report.summary.tokens
+        return Group {
+            tokenMetric(L10n.text("普通输入"), value: tokens.input)
+            tokenMetric(L10n.text("输出"), value: tokens.output)
+            tokenMetric(L10n.text("缓存读取"), value: tokens.cacheRead)
+            tokenMetric(L10n.text("缓存写入"), value: tokens.cacheWrite)
+            tokenMetric(L10n.text("推理（已含在输出）"), value: tokens.reasoning)
         }
     }
 
     private func metric(_ title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 11)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 23, weight: .semibold, design: .rounded)).monospacedDigit()
-        }
+            Text(title).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(value).font(.system(size: 25, weight: .semibold, design: .rounded)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.75)
+        }.frame(minWidth: 170, maxWidth: .infinity, alignment: .leading)
     }
     private func tokenMetric(_ title: String, value: Int64) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(title).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text(MeterFormat.tokens(value)).font(.system(size: 13, weight: .medium)).monospacedDigit()
-        }
+        }.frame(minWidth: 130, maxWidth: .infinity, alignment: .leading)
     }
 
     private var rankingCard: some View {
         VStack(alignment: .leading, spacing: 15) {
             let rankings = history.rankings
-            HStack(spacing: 20) {
-                Picker(L10n.text("排行分组"), selection: $history.grouping) {
-                    ForEach(UsageGrouping.allCases) { Text(L10n.text($0.title)).tag($0) }
-                }.id(L10n.locale.identifier).labelsHidden().accessibilityLabel(L10n.text("排行分组")).pickerStyle(.segmented).frame(maxWidth: 350)
-                Spacer(minLength: 0)
-                TextField(L10n.text("搜索排行"), text: $history.search).textFieldStyle(.roundedBorder).frame(width: 180)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    rankingGrouping.frame(width: 350)
+                    Spacer(minLength: 0)
+                    rankingSearch.frame(width: 180)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    rankingGrouping.frame(maxWidth: 350)
+                    rankingSearch
+                }
             }
             if rankings.isEmpty {
                 emptyMessage(history.search.isEmpty ? L10n.text("所选范围没有本机用量记录") : L10n.text("没有匹配的结果"), detail: L10n.text("可以切换时间范围、服务或搜索条件。"))
@@ -264,6 +297,22 @@ struct UsageHistoryView: View {
         }.padding(18).historyCard()
     }
 
+    private var rankingGrouping: some View {
+        Picker(L10n.text("排行分组"), selection: $history.grouping) {
+            ForEach(UsageGrouping.allCases) { Text(L10n.text($0.title)).tag($0) }
+        }.id(L10n.locale.identifier).labelsHidden().accessibilityLabel(L10n.text("排行分组")).pickerStyle(.segmented)
+    }
+
+    private var rankingSearch: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField(L10n.text("搜索排行"), text: $history.search)
+                .textFieldStyle(.plain).accessibilityLabel(L10n.text("搜索排行"))
+        }.font(.system(size: 12)).padding(.horizontal, 9).padding(.vertical, 6)
+            .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(WorkspaceStyle.border, lineWidth: 1))
+    }
+
     private func rankingRow(_ row: UsageRanking, index: Int) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -275,14 +324,15 @@ struct UsageHistoryView: View {
                     Image(systemName: history.grouping == .project ? "folder" : history.grouping == .provider ? "square.stack.3d.up" : "bubble.left.and.bubble.right")
                         .font(.system(size: 13)).foregroundStyle(.secondary).frame(width: 18)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(rankingTitle(row)).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                        Text(rankingSubtitle(row)).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-                    }.help(rankingTitle(row) + "\n" + rankingSubtitle(row))
-                    Spacer(minLength: 12)
+                        Text(rankingTitle(row)).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                        Text(rankingSubtitle(row)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    }.frame(maxWidth: .infinity, alignment: .leading).layoutPriority(0)
+                        .help(rankingTitle(row) + "\n" + rankingSubtitle(row))
+                    Spacer(minLength: 8)
                     VStack(alignment: .trailing, spacing: 3) {
                         Text(cost(row.summary.pricedCostUSD) + (row.summary.unpricedCount > 0 ? L10n.text(" + 未计价") : "")).font(.system(size: 12, weight: .medium)).monospacedDigit()
                         Text(MeterFormat.tokens(row.summary.tokens.total) + " Token").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
-                    }
+                    }.fixedSize(horizontal: true, vertical: false).layoutPriority(1)
                     Image(systemName: expandedRankings.contains(row.id) ? "chevron.up" : "chevron.down").font(.system(size: 9)).foregroundStyle(.secondary)
                 }.padding(.vertical, 12).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityLabel((expandedRankings.contains(row.id) ? L10n.text("收起排行明细 ") : L10n.text("展开排行明细 ")) + rankingTitle(row))
@@ -380,10 +430,10 @@ struct UsageHistoryView: View {
         VStack(spacing: 9) {
             ForEach(models) { model in
                 HStack(spacing: 12) {
-                    Text(model.model).font(.system(size: 12, design: .monospaced)).lineLimit(1).help(model.model)
+                    Text(model.model).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle).help(model.model)
                     Spacer(minLength: 8)
-                    Text(MeterFormat.tokens(model.tokens.total) + " Token").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
-                    Text(cost(model.estimatedCostUSD)).font(.system(size: 12, weight: .medium)).monospacedDigit().frame(minWidth: 66, alignment: .trailing)
+                    Text(MeterFormat.tokens(model.tokens.total) + " Token").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit().fixedSize()
+                    Text(cost(model.estimatedCostUSD)).font(.system(size: 12, weight: .medium)).monospacedDigit().frame(minWidth: 66, alignment: .trailing).fixedSize()
                 }
             }
         }
@@ -441,7 +491,7 @@ private struct HistoryCostBar: Identifiable {
 
 private extension View {
     func historyCard() -> some View {
-        background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.05), lineWidth: 1))
+        background(WorkspaceStyle.cardBackground, in: RoundedRectangle(cornerRadius: WorkspaceStyle.cardRadius))
+            .overlay(RoundedRectangle(cornerRadius: WorkspaceStyle.cardRadius).stroke(WorkspaceStyle.border, lineWidth: 1))
     }
 }

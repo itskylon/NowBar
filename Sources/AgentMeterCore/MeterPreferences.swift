@@ -44,6 +44,7 @@ public struct MeterPreferences: Codable, Equatable, Sendable {
     public var enabledProviders: Set<ProviderID> = Set(ProviderID.allCases)
     public var lowQuotaAlerts = false
     public var resetAlerts = false
+    public var menuBar = MenuBarPreferences()
 
     public init() {}
 
@@ -59,7 +60,7 @@ public struct MeterPreferences: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case language, refreshInterval, quotaDisplay, resetTimeStyle, enabledProviders, lowQuotaAlerts, resetAlerts
+        case language, refreshInterval, quotaDisplay, resetTimeStyle, enabledProviders, lowQuotaAlerts, resetAlerts, menuBar
     }
 
     public init(from decoder: Decoder) throws {
@@ -71,6 +72,7 @@ public struct MeterPreferences: Codable, Equatable, Sendable {
         resetTimeStyle = (try? values.decode(ResetTimeStyle.self, forKey: .resetTimeStyle)) ?? resetTimeStyle
         lowQuotaAlerts = (try? values.decode(Bool.self, forKey: .lowQuotaAlerts)) ?? lowQuotaAlerts
         resetAlerts = (try? values.decode(Bool.self, forKey: .resetAlerts)) ?? resetAlerts
+        menuBar = (try? values.decode(MenuBarPreferences.self, forKey: .menuBar)) ?? menuBar
         if let entries = try? values.decode([ProviderEntry].self, forKey: .enabledProviders) {
             let providers = Set(entries.compactMap(\.id))
             if !providers.isEmpty { enabledProviders = providers }
