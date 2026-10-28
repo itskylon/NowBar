@@ -7,11 +7,12 @@ public enum CodexSource {
 
     /// Quota is account-wide; Token history is exclusively this Mac's local logs.
     /// Neither read starts a turn or redeems a rate-limit reset.
-    public static func load(executable: String? = nil, codexHome: URL? = nil) throws -> ProviderSnapshot {
+    public static func load(executable: String? = nil, codexHome: URL? = nil, oauthEnabled: Bool = false) throws -> ProviderSnapshot {
         var quota = ProviderSnapshot(provider: .codex)
         do {
-            quota = try loadQuota(executable: executable)
+            quota = oauthEnabled ? try OAuthQuotaSource.load(.codex, codexHome: codexHome) : try loadQuota(executable: executable)
         } catch {
+            if oauthEnabled { quota.quotaSource = .codexOAuth }
             quota.quotaReadFailed = true
             quota.message = error.localizedDescription
         }

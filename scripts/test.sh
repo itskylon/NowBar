@@ -11,13 +11,13 @@ done
 swiftc "${METER_FLAGS[@]}" -parse-as-library -emit-library -static -emit-module -module-name AgentMeterCore \
   Sources/AgentMeterCore/*.swift -emit-module-path "$METER_BUILD/AgentMeterCore.swiftmodule" -o "$METER_BUILD/libAgentMeterCore.a"
 swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
-  Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Sources/AgentMeter/AppUpdateController.swift Tests/StoreAcceptance.swift -o "$METER_BUILD/StoreAcceptance"
+  Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Sources/AgentMeter/AppUpdateController.swift Sources/AgentMeter/AccountAuthorizationController.swift Tests/StoreAcceptance.swift -o "$METER_BUILD/StoreAcceptance"
 "$METER_BUILD/StoreAcceptance"
 swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
   Sources/AgentMeter/UsageHistoryStore.swift Tests/HistoryWindowAcceptance.swift -o "$METER_BUILD/HistoryWindowAcceptance"
 "$METER_BUILD/HistoryWindowAcceptance"
 swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
-  Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Sources/AgentMeter/AppUpdateController.swift Sources/AgentMeter/UsageHistoryStore.swift \
+  Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Sources/AgentMeter/AppUpdateController.swift Sources/AgentMeter/AccountAuthorizationController.swift Sources/AgentMeter/UsageHistoryStore.swift \
   Tests/LanguageAcceptance.swift -o "$METER_BUILD/LanguageAcceptance"
 "$METER_BUILD/LanguageAcceptance"
 swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
@@ -29,10 +29,13 @@ swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD"
 swiftc "${METER_FLAGS[@]}" -parse-as-library Sources/AgentMeter/NativePanel.swift Tests/StatusSummaryAcceptance.swift -o "$METER_BUILD/StatusSummaryAcceptance"
 "$METER_BUILD/StatusSummaryAcceptance"
 swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
-  Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Sources/AgentMeter/AppUpdateController.swift \
+  Sources/AgentMeter/Store.swift Sources/AgentMeter/SystemServices.swift Sources/AgentMeter/AppUpdateController.swift Sources/AgentMeter/AccountAuthorizationController.swift \
   Sources/AgentMeter/NativePanel.swift Sources/AgentMeter/MenuBarPresentation.swift Tests/MenuBarPresentationAcceptance.swift -o "$METER_BUILD/MenuBarPresentationAcceptance"
 "$METER_BUILD/MenuBarPresentationAcceptance"
 swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
   Sources/AgentMeter/AppThemeController.swift Tests/AppearanceAcceptance.swift -o "$METER_BUILD/AppearanceAcceptance"
 "$METER_BUILD/AppearanceAcceptance"
 bash scripts/test-panel.sh
+swiftc "${METER_FLAGS[@]}" -parse-as-library -I "$METER_BUILD" -L "$METER_BUILD" -lAgentMeterCore \
+  Sources/AgentMeter/AccountAuthorizationController.swift Tests/AuthorizationAcceptance.swift -o "$METER_BUILD/AuthorizationAcceptance"
+"$METER_BUILD/AuthorizationAcceptance"

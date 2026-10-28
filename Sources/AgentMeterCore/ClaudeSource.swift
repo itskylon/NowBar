@@ -29,10 +29,17 @@ public enum ClaudeSource {
         return snapshot
     }
 
-    public static func load(home: URL = FileManager.default.homeDirectoryForCurrentUser) throws -> ProviderSnapshot {
+    public static func load(home: URL = FileManager.default.homeDirectoryForCurrentUser, oauthEnabled: Bool = false) throws -> ProviderSnapshot {
         let bridge = home.appendingPathComponent("Library/Application Support/AgentMeter/claude-usage.json")
         var snapshot: ProviderSnapshot
-        if ClaudeDesktopSource.isPresent(home: home) {
+        if oauthEnabled {
+            do { snapshot = try OAuthQuotaSource.load(.claude, home: home) }
+            catch {
+                snapshot = .init(provider: .claude, message: error.localizedDescription)
+                snapshot.quotaSource = .claudeOAuth
+                snapshot.quotaReadFailed = true
+            }
+        } else if ClaudeDesktopSource.isPresent(home: home) {
             snapshot = ClaudeDesktopSource.load(home: home)
         } else if FileManager.default.fileExists(atPath: bridge.path) {
             do { snapshot = try parseBridge(Data(contentsOf: bridge)) }

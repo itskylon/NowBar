@@ -30,7 +30,7 @@ final class AppUpdateController: ObservableObject {
     private static let checkedKey = "nowbar.updates.lastChecked.v1"
     private static let notifiedKey = "nowbar.updates.lastNotifiedVersion.v1"
 
-    init(currentVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.6.9",
+    init(currentVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.7.0",
          enabled: Bool = true, defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init,
          fetch: @escaping (String) async throws -> AppRelease? = AppUpdates.fetch) {
         self.currentVersion = currentVersion

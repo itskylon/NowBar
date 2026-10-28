@@ -9,7 +9,7 @@ struct MeterSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 WorkspacePageHeader(title: L10n.text("通用与服务设置"), subtitle: L10n.text("AI 用量，抬眼可见。")) {
-                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.6.9")
+                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.7.0")
                         .font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(.secondary)
                         .padding(.horizontal, 9).padding(.vertical, 5)
                         .background(Color.primary.opacity(0.045), in: Capsule())
@@ -45,7 +45,8 @@ struct MeterSettingsView: View {
                 WorkspaceCard {
                     VStack(alignment: .leading, spacing: 12) {
                         providerHeading(.codex)
-                        serviceCaption("额度使用已登录的 Codex CLI。Token、模型和参考费用读取本机日志，按本地日期统计，包含子任务；自动模式约每 5 秒更新。无需复制密钥。")
+                        ProviderAuthorizationSettings(store: store, authorization: store.authorization, provider: .codex)
+                        serviceCaption("连接账户后直接查询额度；未连接时保留原有 CLI 读取。Token、模型和参考费用仍由本机日志统计。")
                         Link(L10n.text("查看 Codex 用量"), destination: URL(string: "https://chatgpt.com/codex/settings/usage")!)
                     }
                 }
@@ -54,6 +55,8 @@ struct MeterSettingsView: View {
                 WorkspaceCard {
                     VStack(alignment: .leading, spacing: 12) {
                         providerHeading(.claude)
+                        ProviderAuthorizationSettings(store: store, authorization: store.authorization, provider: .claude)
+                        serviceCaption("授权读取优先使用 Claude Code 登录账户；断开后恢复桌面版或状态栏接入。不同来源可能是不同账户。")
                         serviceCaption("自动读取这台 Mac 已登录的 Claude 桌面版账户，显示已用、剩余和重置时间。Free 套餐的 5 小时额度读取桌面缓存，随正常聊天更新。")
                         serviceCaption("Token、模型和参考费用读取本机 Claude Code / Cowork 会话日志。普通桌面聊天未提供每日精确 Token，不会根据额度百分比估算。")
                         Link(L10n.text("查看 Claude 用量"), destination: URL(string: "https://claude.ai/settings/usage")!)
@@ -112,6 +115,75 @@ struct MeterSettingsView: View {
     private func serviceCaption(_ text: String) -> some View {
         Text(L10n.text(text)).font(.system(size: 12)).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true).lineSpacing(3)
+    }
+}
+
+private struct ProviderAuthorizationSettings: View {
+    @ObservedObject var store: MeterStore
+    @ObservedObject var authorization: AccountAuthorizationController
+    var provider: ProviderID
+
+    private var enabled: Bool { authorization.isEnabled(provider) }
+    private var state: AccountAuthorizationState { authorization.state(for: provider) }
+    private var verified: Bool {
+        let value = store.snapshot(provider)
+        return enabled && value.quotaSource?.isOAuth == true && value.updatedAt != nil && value.quotaReadFailed != true
+    }
+    private var status: String {
+        if state.isBusy { return state.message }
+        if case .failed = state { return state.message }
+        if verified { return "账户已连接" }
+        if enabled {
+            if let error = store.snapshot(provider).quotaMessage { return error }
+            return "正在验证账户额度…"
+        }
+        return "尚未授权"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                if state.isBusy || (enabled && store.refreshing && !verified) {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: verified ? "checkmark.shield.fill" : "person.crop.circle")
+                        .foregroundStyle(verified ? Color.teal : Color.secondary)
+                }
+                Text(L10n.text(status)).font(.system(size: 12))
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("NowBarAuthStatus" + provider.rawValue)
+            }
+            HStack(spacing: 9) {
+                if state.isBusy {
+                    Button(L10n.text("取消登录")) { authorization.cancel(provider) }
+                } else {
+                    if enabled {
+                        Button(L10n.text("刷新额度"), action: store.refresh).disabled(store.refreshing)
+                    } else {
+                        Button(L10n.text("连接现有账户")) { authorization.connectExisting(provider) }
+                            .accessibilityIdentifier("NowBarConnectExisting" + provider.rawValue)
+                    }
+                    Button(L10n.text("浏览器登录")) { authorization.signIn(provider) }
+                        .accessibilityIdentifier("NowBarBrowserLogin" + provider.rawValue)
+                    if enabled {
+                        Button(L10n.text("断开连接")) { authorization.disconnect(provider) }
+                            .accessibilityIdentifier("NowBarDisconnect" + provider.rawValue)
+                    }
+                }
+            }.disabled(store.demo)
+            Text(L10n.text("由官方登录工具打开浏览器，凭证由该工具保存在本机。断开仅停止 NowBar 授权读取，不会退出原账户。"))
+                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if case .failed = state {
+                Link(L10n.text("登录与安装帮助"), destination: URL(string: provider == .codex
+                    ? "https://developers.openai.com/codex/auth/"
+                    : "https://code.claude.com/docs/en/authentication")!)
+                Text(L10n.text("浏览器回调未完成时，可在终端完成官方登录，再点「连接现有账户」。"))
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(provider == .codex ? "codex login" : "claude auth login --claudeai")
+                    .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+            }
+        }.padding(12)
+            .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

@@ -74,7 +74,9 @@ public enum TokenHistorySource: String, Codable, Sendable {
 }
 
 public enum QuotaSource: String, Codable, Sendable {
-    case claudeDesktop, claudeCode
+    case claudeDesktop, claudeCode, codexOAuth, claudeOAuth
+
+    public var isOAuth: Bool { self == .codexOAuth || self == .claudeOAuth }
 }
 
 public struct ProviderSnapshot: Codable, Sendable {
@@ -106,6 +108,7 @@ public enum SnapshotMerge {
         guard let previous, previous.provider == fresh.provider else { return fresh }
         var result = fresh
         let sameQuotaAccount = fresh.quotaSource == .claudeDesktop || previous.quotaSource == .claudeDesktop
+            || fresh.quotaSource?.isOAuth == true || previous.quotaSource?.isOAuth == true
             ? fresh.quotaSource == previous.quotaSource && fresh.quotaAccountID != nil
                 && fresh.quotaAccountID == previous.quotaAccountID : true
         if fresh.quotaReadFailed == true, sameQuotaAccount, !previous.windows.isEmpty {

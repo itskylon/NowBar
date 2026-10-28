@@ -32,6 +32,27 @@ struct MergeSmoke {
         local.historyUpdatedAt = Date(timeIntervalSince1970: 200)
         let raced = SnapshotMerge.preservingFailures(local, previous: newer)
         guard raced.days.first?.totalTokens == 70 && raced.historyUpdatedAt == newer.historyUpdatedAt else { fatalError("Slow quota refresh cannot overwrite newer local history") }
-        print("Merge: 8 checks passed")
+        var oauthOld = old
+        oauthOld.quotaSource = .codexOAuth
+        oauthOld.quotaAccountID = "account-one"
+        var oauthFailure = broken
+        oauthFailure.quotaSource = .codexOAuth
+        oauthFailure.quotaAccountID = "account-two"
+        guard SnapshotMerge.preservingFailures(oauthFailure, previous: oauthOld).windows.isEmpty else {
+            fatalError("An OAuth account change must not restore another account's quota")
+        }
+        oauthFailure.quotaAccountID = nil
+        guard SnapshotMerge.preservingFailures(oauthFailure, previous: oauthOld).windows.isEmpty else {
+            fatalError("An unreadable OAuth identity must not restore a cached account's quota")
+        }
+        oauthFailure.quotaAccountID = "account-one"
+        guard SnapshotMerge.preservingFailures(oauthFailure, previous: oauthOld).windows == oauthOld.windows else {
+            fatalError("Transient same-account failure can preserve the last quota sample")
+        }
+        oauthFailure.quotaSource = nil
+        guard SnapshotMerge.preservingFailures(oauthFailure, previous: oauthOld).windows.isEmpty else {
+            fatalError("Disconnecting OAuth must not carry its quota into the CLI source")
+        }
+        print("Merge: 12 checks passed")
     }
 }

@@ -49,6 +49,10 @@ struct QuotaUsageSmoke {
         desktopClaude.updatedAt = now
         check(rows(desktopClaude, bridge: false).allSatisfy { $0.state == .unavailable }, "Connected desktop accounts do not require a Code bridge")
         check(rows(desktopClaude, bridge: false, refreshing: true).allSatisfy { $0.state == .loading }, "Desktop missing quota can refresh independently of bridge")
+        var oauthClaude = missingClaude
+        oauthClaude.quotaSource = .claudeOAuth
+        oauthClaude.updatedAt = now
+        check(rows(oauthClaude, bridge: false).allSatisfy { $0.state == .unavailable }, "OAuth accounts do not require the status-line bridge and missing limits stay unknown")
         var claude = ProviderSnapshot(provider: .claude, windows: [week], updatedAt: now)
         check(rows(claude, bridge: false)[0].state == .current, "Valid Claude data takes priority over bridge installation flag")
         claude.updatedAt = now.addingTimeInterval(-601)

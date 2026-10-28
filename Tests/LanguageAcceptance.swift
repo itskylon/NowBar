@@ -31,6 +31,9 @@ struct LanguageAcceptance {
             expect(L10n.text(text).range(of: "\\p{Han}", options: .regularExpression) == nil, "Installation states translate: " + text)
         }
         expect(AppTheme.allCases.map { L10n.text($0.title) } == ["System appearance", "Light", "Dark"], "Theme labels translate in English")
+        for text in ["连接现有账户", "浏览器登录", "断开连接", "正在连接账户…", "账户已连接", "OAuth 登录已过期，请重新连接账户。", "账户已连接，但服务未提供可读取的额度。", "无法读取 Claude 登录钥匙串，请解锁钥匙串并在连接账户时允许 NowBar 访问。"] {
+            expect(L10n.text(text).range(of: "\\p{Han}", options: .regularExpression) == nil, "Authorization states translate: " + text)
+        }
         let record = UsageRecord(id: "one", date: now, provider: .codex, model: "my-model", tokens: .init(input: 10), estimatedCostUSD: 0.01, projectPath: "/projects/每周", sessionID: "abcdefghijk", conversationID: "123456789")
         let history = UsageHistoryStore(previewRecords: [record], now: now)
         history.grouping = .session

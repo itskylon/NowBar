@@ -30,6 +30,7 @@ final class MeterStore: ObservableObject {
     }
     let systemServices: MeterSystemServices
     let updates: AppUpdateController
+    let authorization: AccountAuthorizationController
     let demo: Bool
     private let preview: Bool
     private var timer: Timer?
@@ -37,6 +38,7 @@ final class MeterStore: ObservableObject {
     private var localUsageTimer: Timer?
     private var readingLocalUsage = false
     private var refreshPending = false
+    private var accountGeneration = 0
     private var applyingDetection = false
     private var providerChoices: [ProviderID: Bool] = [:]
     private var alertTracker = QuotaAlertTracker()
@@ -48,6 +50,7 @@ final class MeterStore: ObservableObject {
         preview = previewSnapshots != nil
         systemServices = MeterSystemServices(active: !demo && previewSnapshots == nil)
         updates = AppUpdateController(enabled: !demo && previewSnapshots == nil)
+        authorization = AccountAuthorizationController(active: !demo && previewSnapshots == nil)
         L10n.language = preferences.language
         if let previewSnapshots { snapshots = previewSnapshots; return }
         if demo { snapshots = Self.demoSnapshots(); selected = .claude; return }
@@ -74,10 +77,18 @@ final class MeterStore: ObservableObject {
                     snapshot.days = []
                     snapshot.historyUpdatedAt = nil
                 }
+                let expectedOAuth: QuotaSource? = authorization.isEnabled(snapshot.provider)
+                    ? (snapshot.provider == .codex ? .codexOAuth : .claudeOAuth) : nil
+                if snapshot.quotaSource?.isOAuth == true || expectedOAuth != nil {
+                    if snapshot.quotaSource != expectedOAuth {
+                        Self.clearQuota(&snapshot, source: expectedOAuth)
+                    }
+                }
                 snapshot.message = "上次保存的数据，正在更新…"
                 return snapshot
             }
         }
+        authorization.onChange = { [weak self] provider in self?.authorizationChanged(provider) }
         scheduleRefresh()
         displayTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -251,6 +262,8 @@ final class MeterStore: ObservableObject {
         refreshing = true
         let previous = snapshots
         let requestedProviders = providers
+        let generation = accountGeneration
+        let oauthProviders = Set(requestedProviders.filter { authorization.isEnabled($0) })
         Task {
             let result = await Task.detached(priority: .utility) {
                 var merged: [ProviderSnapshot] = []
@@ -258,7 +271,7 @@ final class MeterStore: ObservableObject {
                 for provider in requestedProviders {
                     guard await MainActor.run(body: { self.providers.contains(provider) }) else { continue }
                     do {
-                        let value = try ProviderSource.load(provider)
+                        let value = try ProviderSource.load(provider, oauthEnabled: oauthProviders.contains(provider))
                         fresh.append(value)
                         merged.append(value)
                     }
@@ -272,6 +285,13 @@ final class MeterStore: ObservableObject {
                 }
                 return (merged: merged, fresh: fresh)
             }.value
+            // A source/account change invalidates all in-flight account data before cache or alerts.
+            guard generation == accountGeneration else {
+                refreshing = false
+                refreshPending = false
+                refresh()
+                return
+            }
             // A service disabled during a read cannot update the visible result or send alerts.
             snapshots = ProviderID.allCases.compactMap { id in
                 (providers.contains(id) ? result.merged.first { $0.provider == id }.map {
@@ -286,10 +306,33 @@ final class MeterStore: ObservableObject {
                 try? data.write(to: file, options: .atomic)
                 try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
             }
-            await recordAlerts(result.fresh)
+            await recordAlerts(result.fresh, generation: generation)
             refreshing = false
             if refreshPending { refreshPending = false; refresh() }
         }
+    }
+
+    private func authorizationChanged(_ provider: ProviderID) {
+        guard !demo, !preview else { return }
+        accountGeneration += 1
+        if let index = snapshots.firstIndex(where: { $0.provider == provider }) {
+            let source: QuotaSource? = authorization.isEnabled(provider)
+                ? (provider == .codex ? .codexOAuth : .claudeOAuth) : nil
+            Self.clearQuota(&snapshots[index], source: source)
+        }
+        refresh()
+    }
+
+    private static func clearQuota(_ snapshot: inout ProviderSnapshot, source: QuotaSource?) {
+        snapshot.windows = []
+        snapshot.updatedAt = nil
+        snapshot.plan = nil
+        snapshot.quotaSource = source
+        snapshot.quotaAccountID = nil
+        snapshot.quotaFromCache = nil
+        snapshot.quotaReadFailed = nil
+        snapshot.quotaMessage = nil
+        snapshot.message = nil
     }
 
     private func refreshLocalUsage() {
@@ -322,10 +365,10 @@ final class MeterStore: ObservableObject {
         displayNow = Date()
     }
 
-    private func recordAlerts(_ fresh: [ProviderSnapshot]) async {
+    private func recordAlerts(_ fresh: [ProviderSnapshot], generation: Int) async {
         for snapshot in fresh {
             for window in snapshot.windows {
-                guard providers.contains(snapshot.provider) else { break }
+                guard generation == accountGeneration, providers.contains(snapshot.provider) else { return }
                 var observation = snapshot
                 observation.windows = [window]
                 var nextTracker = alertTracker
@@ -334,11 +377,12 @@ final class MeterStore: ObservableObject {
                     resetEnabled: preferences.resetAlerts && systemServices.notificationsAllowed)
                 if let alert = alerts.first {
                     let delivered = await systemServices.deliver(alert, shouldSend: { [self] in
-                        providers.contains(snapshot.provider)
+                        generation == accountGeneration && providers.contains(snapshot.provider)
                             && (alert.kind == .low ? preferences.lowQuotaAlerts : preferences.resetAlerts)
                     })
                     guard delivered else { continue }
                 }
+                guard generation == accountGeneration else { return }
                 // Commit each window independently so another window's send failure cannot replay it.
                 alertTracker = nextTracker
                 if let data = try? JSONEncoder().encode(alertTracker) { UserDefaults.standard.set(data, forKey: "quotaAlertTracker.v1") }

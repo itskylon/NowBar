@@ -193,7 +193,7 @@ struct DashboardView: View {
                 }
                 Spacer()
                 if value.windows.isEmpty, provider == .claude {
-                    if value.quotaSource == .claudeDesktop {
+                    if value.quotaSource == .claudeDesktop || value.quotaSource == .claudeOAuth {
                         Link(L10n.text("查看用量"), destination: URL(string: "https://claude.ai/settings/usage")!)
                             .font(.system(size: 11, weight: .light)).foregroundStyle(ReferenceStyle.secondary)
                             .accessibilityLabel(L10n.text("查看 Claude 用量"))
@@ -232,7 +232,7 @@ struct DashboardView: View {
     }
 
     private func unavailableQuotaRow(_ provider: ProviderID, title: String, snapshot: ProviderSnapshot) -> some View {
-        let disconnected = provider == .claude && snapshot.quotaSource != .claudeDesktop && !store.bridgeInstalled
+        let disconnected = provider == .claude && snapshot.quotaSource != .claudeDesktop && snapshot.quotaSource != .claudeOAuth && !store.bridgeInstalled
         let state = disconnected ? "未接入" : store.refreshing ? "读取中" : snapshot.quotaReadFailed == true ? "待更新" : "未提供"
         let note = disconnected ? "连接后显示额度与重置时间" : "暂无重置时间"
         return HStack(spacing: 12) {

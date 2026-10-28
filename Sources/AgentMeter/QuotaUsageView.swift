@@ -184,8 +184,8 @@ struct QuotaUsageView: View {
 
     private func source(_ provider: ProviderID) -> String {
         switch provider {
-        case .codex: L10n.text("Codex 账户额度")
-        case .claude: L10n.text(store.snapshot(provider).quotaFromCache == true ? "Claude 桌面缓存" : store.snapshot(provider).quotaSource == .claudeDesktop ? "Claude 桌面版 · 账户共享额度" : "Claude Code 官方状态栏快照")
+        case .codex: L10n.text(store.snapshot(provider).quotaSource == .codexOAuth ? "Codex OAuth 账户额度" : "Codex 账户额度")
+        case .claude: L10n.text(store.snapshot(provider).quotaSource == .claudeOAuth ? "Claude OAuth 账户额度" : store.snapshot(provider).quotaFromCache == true ? "Claude 桌面缓存" : store.snapshot(provider).quotaSource == .claudeDesktop ? "Claude 桌面版 · 账户共享额度" : "Claude Code 官方状态栏快照")
         case .grokBot: L10n.text("Grok Bot 账户用量")
         }
     }
